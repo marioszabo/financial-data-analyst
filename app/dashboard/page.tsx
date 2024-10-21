@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { isSubscriptionActive } from '@/lib/utils'
+import Script from 'next/script'
 
 interface UserDetails {
   id: string;
@@ -18,9 +20,10 @@ export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<UserDetails | null>(null)
   const [loading, setLoading] = useState(true)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive'>('inactive')
 
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchUserAndSubscription = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/auth/login')
@@ -36,12 +39,15 @@ export default function DashboardPage() {
           full_name: user.user_metadata?.full_name,
           avatar_url: user.user_metadata?.avatar_url
         })
+
+        const isActive = await isSubscriptionActive(user.id)
+        setSubscriptionStatus(isActive ? 'active' : 'inactive')
       }
 
       setLoading(false)
     }
 
-    fetchUser()
+    fetchUserAndSubscription()
   }, [router])
 
   const handleLogout = async () => {
@@ -58,6 +64,7 @@ export default function DashboardPage() {
 
   return (
     <div className="container mx-auto p-4">
+      <Script src="https://js.stripe.com/v3/buy-button.js" />
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <Button onClick={handleLogout} variant="outline">Logout</Button>
@@ -89,22 +96,23 @@ export default function DashboardPage() {
             <CardDescription>Manage your subscription</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-500">Current Plan: Free</p>
+            <p className="text-sm text-gray-500">
+              Current Plan: {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
+            </p>
           </CardContent>
           <CardFooter>
-          <script async
-  src="https://js.stripe.com/v3/buy-button.js">
-</script>
-
-<script async
-  src="https://js.stripe.com/v3/buy-button.js">
-</script>
-
-<stripe-buy-button
-  buy-button-id="buy_btn_1QCResHV58Ez6fBuVAn9eDpX"
-  publishable-key="pk_live_51QBZP7HV58Ez6fBu8EwTkh16sFW5xX1uS1yOpLdDyEvEvJQm9ISLWmx2VpuqUXgeXvjxQT3RKIiGjx7mRxqRDerz00dae7QHXY"
->
-</stripe-buy-button>
+            {subscriptionStatus === 'inactive' && (
+              <stripe-buy-button
+                buy-button-id="buy_btn_1QCResHV58Ez6fBuVAn9eDpX"
+                publishable-key="pk_live_51QBZP7HV58Ez6fBu8EwTkh16sFW5xX1uS1yOpLdDyEvEvJQm9ISLWmx2VpuqUXgeXvjxQT3RKIiGjx7mRxqRDerz00dae7QHXY"
+              >
+              </stripe-buy-button>
+            )}
+            {subscriptionStatus === 'active' && (
+              <Button variant="outline" onClick={() => {/* Add logic to manage subscription */}}>
+                Manage Subscription
+              </Button>
+            )}
           </CardFooter>
         </Card>
 
@@ -118,7 +126,11 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-500">Get insights and analyze your financial data</p>
           </CardContent>
           <CardFooter>
-            <Button onClick={() => router.push('/finance')}>Go to Finance Page</Button>
+            {subscriptionStatus === 'active' ? (
+              <Button onClick={() => router.push('/finance')}>Go to Finance Page</Button>
+            ) : (
+              <Button disabled>Subscribe to Access</Button>
+            )}
           </CardFooter>
         </Card>
       </div>
