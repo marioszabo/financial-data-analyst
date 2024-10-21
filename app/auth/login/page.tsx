@@ -22,7 +22,7 @@ const LoginPage: React.FC = () => {
       console.log('LoginPage - Session:', session ? 'exists' : 'null')
       if (session) {
         console.log('LoginPage - Redirecting to /finance')
-        router.push('/finance')
+        router.push('/dashboard')
       }
     }
     checkUser()
@@ -49,7 +49,7 @@ const LoginPage: React.FC = () => {
 
       if (session) {
         console.log('Redirecting to /finance')
-        router.push('/finance')
+        router.push('/dashboard')
       } else {
         console.log('Session is null after successful sign in')
         setError('Login successful but session not created. Please try again.')

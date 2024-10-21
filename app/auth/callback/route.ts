@@ -16,6 +16,6 @@ export async function GET(request: Request) {
   }
 
   // Redirect to the chatbot interface page after sign in
-  console.log('Redirecting to:', `${requestUrl.origin}/finance`)
-  return NextResponse.redirect(`${requestUrl.origin}/finance`)
+  console.log('Redirecting to:', `${requestUrl.origin}/dashboard`)
+  return NextResponse.redirect(`${requestUrl.origin}/dashboard`)
 }
