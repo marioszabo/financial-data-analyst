@@ -1,3 +1,6 @@
+/// <reference path="../../types/stripe-elements.d.ts" />
+// Adjust the path as necessary to point to where you created the stripe-elements.d.ts file
+
 'use client'
 
 import { useEffect, useState } from 'react'

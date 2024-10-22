@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabase } from '@/lib/supabase'
 
+// This tells Next.js to use the Edge runtime for this route
+export const runtime = 'edge'
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16',
+  apiVersion: '2024-09-30.acacia',
 })
 
 export async function POST(req: NextRequest) {
@@ -54,10 +57,4 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ received: true })
-}
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
 }

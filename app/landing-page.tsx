@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 
 // At the top of the file, add or update the interface:
 interface LandingPageProps {
-  basicPlanStripeLink: string;
+  basicPlanStripeLink?: string; // Make this prop optional
 }
 
 // Update the component definition:
@@ -15,6 +15,15 @@ export default function LandingPage({ basicPlanStripeLink }: LandingPageProps) {
 
   const handleLoginRedirect = () => {
     router.push('/auth/login');
+  };
+
+  const handleSubscribe = () => {
+    if (basicPlanStripeLink) {
+      window.location.href = basicPlanStripeLink;
+    } else {
+      // Handle the case where the link is not provided
+      console.error('Stripe link not provided');
+    }
   };
 
   return (
