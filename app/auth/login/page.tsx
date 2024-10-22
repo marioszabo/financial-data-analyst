@@ -16,6 +16,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Check for existing session on component mount
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -28,6 +29,7 @@ const LoginPage: React.FC = () => {
     checkUser()
   }, [router])
 
+  // Handle email/password login
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -44,6 +46,7 @@ const LoginPage: React.FC = () => {
 
       console.log('Sign in successful, data:', data)
 
+      // Double-check session after sign-in
       const { data: { session } } = await supabase.auth.getSession()
       console.log('Session after sign in:', session ? 'exists' : 'null')
 
@@ -51,6 +54,7 @@ const LoginPage: React.FC = () => {
         console.log('Redirecting to /finance')
         router.push('/dashboard')
       } else {
+        // Handle edge case where sign-in is successful but session is not created
         console.log('Session is null after successful sign in')
         setError('Login successful but session not created. Please try again.')
       }
@@ -62,12 +66,14 @@ const LoginPage: React.FC = () => {
     }
   }
 
+  // Handle Google OAuth login
   const handleGoogleLogin = async () => {
     try {
       console.log('Initiating Google login')
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
+          // Ensure redirect happens to the correct callback URL
           redirectTo: `${window.location.origin}/auth/callback`
         }
       })
@@ -86,6 +92,7 @@ const LoginPage: React.FC = () => {
           <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Email/Password login form */}
           <form onSubmit={handleEmailLogin}>
             <div className="grid w-full items-center gap-4">
               <div className="flex flex-col space-y-1.5">
@@ -111,11 +118,13 @@ const LoginPage: React.FC = () => {
                 />
               </div>
             </div>
+            {/* Display error message if login fails */}
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
             <Button className="w-full mt-4" type="submit" disabled={loading}>
               {loading ? 'Logging in...' : 'Log in'}
             </Button>
           </form>
+          {/* Divider between email/password and OAuth login options */}
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
@@ -124,6 +133,7 @@ const LoginPage: React.FC = () => {
               <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
+          {/* Google OAuth login button */}
           <Button 
             variant="outline" 
             className="w-full"

@@ -3,14 +3,15 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { ChartData } from "@/types/chart";
 
-// Initialize Anthropic client with correct headers
+// Initialize Anthropic client with API key from environment variables
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
+// Use Edge runtime for better performance
 export const runtime = "edge";
 
-// Helper to validate base64
+// Helper function to validate base64 strings
 const isValidBase64 = (str: string) => {
   try {
     return btoa(atob(str)) === str;
@@ -19,9 +20,9 @@ const isValidBase64 = (str: string) => {
   }
 };
 
-// Add Type Definitions
+// Define interfaces for chart tool response and tool schema
 interface ChartToolResponse extends ChartData {
-  // Any additional properties specific to the tool response
+  // Additional properties specific to the tool response can be added here
 }
 
 interface ToolSchema {
@@ -34,6 +35,7 @@ interface ToolSchema {
   };
 }
 
+// Define available tools for the AI model
 const tools: ToolSchema[] = [
   {
     name: "generate_graph_data",
@@ -102,8 +104,10 @@ const tools: ToolSchema[] = [
 
 export async function POST(req: NextRequest) {
   try {
+    // Extract data from the request body
     const { messages, fileData, model } = await req.json();
 
+    // Log initial request data for debugging
     console.log("🔍 Initial Request Data:", {
       hasMessages: !!messages,
       messageCount: messages?.length,
@@ -112,7 +116,7 @@ export async function POST(req: NextRequest) {
       model,
     });
 
-    // Input validation
+    // Validate input
     if (!messages || !Array.isArray(messages)) {
       return new Response(
         JSON.stringify({ error: "Messages array is required" }),
@@ -127,13 +131,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Convert all previous messages
+    // Convert messages to Anthropic's expected format
     let anthropicMessages = messages.map((msg: any) => ({
       role: msg.role,
       content: msg.content,
     }));
 
-    // Handle file in the latest message
+    // Handle file data if present
     if (fileData) {
       const { base64, mediaType, isText } = fileData;
 
@@ -145,11 +149,10 @@ export async function POST(req: NextRequest) {
       }
 
       try {
+        // Process text or image files
         if (isText) {
-          // Decode base64 text content
+          // Decode base64 text content and add to the last message
           const textContent = decodeURIComponent(escape(atob(base64)));
-
-          // Replace only the last message with the file content
           anthropicMessages[anthropicMessages.length - 1] = {
             role: "user",
             content: [
@@ -164,7 +167,7 @@ export async function POST(req: NextRequest) {
             ],
           };
         } else if (mediaType.startsWith("image/")) {
-          // Handle image files
+          // Handle image files by adding them to the last message
           anthropicMessages[anthropicMessages.length - 1] = {
             role: "user",
             content: [
@@ -192,6 +195,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Log the final request to Anthropic API for debugging
     console.log("🚀 Final Anthropic API Request:", {
       endpoint: "messages.create",
       model,
@@ -212,6 +216,7 @@ export async function POST(req: NextRequest) {
       ),
     });
 
+    // Make the API call to Anthropic
     const response = await anthropic.messages.create({
       model,
       max_tokens: 4096,
@@ -329,6 +334,7 @@ Never:
 Focus on clear financial insights and let the visualization enhance understanding.`,
     });
 
+    // Log the response from Anthropic API
     console.log("✅ Anthropic API Response received:", {
       status: "success",
       stopReason: response.stop_reason,
@@ -347,14 +353,17 @@ Focus on clear financial insights and let the visualization enhance understandin
         : "No tool used",
     });
 
+    // Extract tool use and text content from the response
     const toolUseContent = response.content.find((c) => c.type === "tool_use");
     const textContent = response.content.find((c) => c.type === "text");
 
+    // Process the tool response to format chart data
     const processToolResponse = (toolUseContent: any) => {
       if (!toolUseContent) return null;
 
       const chartData = toolUseContent.input as ChartToolResponse;
 
+      // Validate chart data structure
       if (
         !chartData.chartType ||
         !chartData.data ||
@@ -401,10 +410,12 @@ Focus on clear financial insights and let the visualization enhance understandin
       };
     };
 
+    // Process the chart data if tool use content is present
     const processedChartData = toolUseContent
       ? processToolResponse(toolUseContent)
       : null;
 
+    // Return the processed response
     return new Response(
       JSON.stringify({
         content: textContent?.text || "",
@@ -420,6 +431,7 @@ Focus on clear financial insights and let the visualization enhance understandin
       },
     );
   } catch (error) {
+    // Log detailed error information for debugging
     console.error("❌ Finance API Error: ", error);
     console.error("Full error details:", {
       name: error instanceof Error ? error.name : "Unknown",
@@ -429,7 +441,7 @@ Focus on clear financial insights and let the visualization enhance understandin
       response: error instanceof Error ? (error as any).response : undefined,
     });
 
-    // Add specific error handling for different scenarios
+    // Handle specific error types
     if (error instanceof Anthropic.APIError) {
       return new Response(
         JSON.stringify({
@@ -451,6 +463,7 @@ Focus on clear financial insights and let the visualization enhance understandin
       );
     }
 
+    // Generic error response
     return new Response(
       JSON.stringify({
         error:
