@@ -3,43 +3,59 @@ import { twMerge } from "tailwind-merge"
 import { supabase } from './supabase'
 
 /**
- * Merges class names using clsx and tailwind-merge.
- * This function is useful for combining Tailwind CSS classes dynamically
- * while avoiding conflicts and optimizing the final class string.
+ * Utility function for merging Tailwind CSS classes
+ * 
+ * Combines clsx and tailwind-merge to:
+ * - Handle conditional classes
+ * - Resolve conflicting Tailwind classes
+ * - Maintain proper order of utility classes
+ * - Support dynamic class generation
+ * 
+ * Example usage:
+ * cn('px-2 py-1', isActive && 'bg-blue-500', ['hover:bg-blue-600'])
  *
- * @param inputs - An array of class values (strings, objects, or arrays)
- * @returns A merged and optimized class string
+ * @param inputs - Array of class values (strings, objects, arrays)
+ * @returns Optimized class string with conflicts resolved
  */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
 /**
- * Checks if a user's subscription is active.
- * This function queries the 'subscriptions' table in Supabase to determine
- * if the user has an active subscription that hasn't expired.
+ * Subscription Status Checker
+ * 
+ * Verifies if a user has an active subscription by:
+ * 1. Querying the subscriptions table
+ * 2. Checking subscription status
+ * 3. Validating expiration date
+ * 
+ * Edge cases handled:
+ * - Missing subscription record
+ * - Database query errors
+ * - Expired subscriptions
+ * - Invalid status values
  *
- * @param userId - The ID of the user to check
- * @returns A promise that resolves to a boolean indicating if the subscription is active
+ * @param userId - Supabase user ID to check
+ * @returns Promise<boolean> - true if subscription is active and valid
  */
 export async function isSubscriptionActive(userId: string): Promise<boolean> {
-  // Query the subscriptions table for the given user
+  // Query subscription data with error handling
   const { data, error } = await supabase
     .from('subscriptions')
     .select('status, current_period_end')
     .eq('user_id', userId)
     .single()
 
-  // Handle any errors that occur during the query
+  // Return false for any database errors to prevent unauthorized access
   if (error) {
     console.error('Error checking subscription:', error)
     return false
   }
 
-  // If no data is returned, assume the subscription is not active
+  // No subscription record found
   if (!data) return false
 
-  // Check if the subscription is active and not expired
+  // Verify both active status and non-expired period
   const isActive = data.status === 'active' && new Date(data.current_period_end) > new Date()
   return isActive
 }

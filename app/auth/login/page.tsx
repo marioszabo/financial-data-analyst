@@ -11,61 +11,78 @@ import { useState, useEffect } from 'react'
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-// Define the main LoginPage component
+/**
+ * LoginPage Component
+ * 
+ * Provides authentication functionality with both email/password and Google OAuth.
+ * Handles session management, error states, and redirects after successful login.
+ * Uses Supabase for authentication and user management.
+ */
 const LoginPage: React.FC = () => {
   const router = useRouter()
+  // Form state management
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  // Separate error states for different authentication methods
   const [error, setError] = useState<string | null>(null)
   const [oauthError, setOauthError] = useState<string | null>(null)
   const supabase = createClient()
 
+  /**
+   * Session Check Effect
+   * Redirects to finance page if user is already authenticated
+   * Prevents showing login form to authenticated users
+   */
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      console.log('LoginPage - Session:', session ? 'exists' : 'null')
       if (session) {
-        console.log('LoginPage - Redirecting to /finance')
         router.push('/finance')
       }
     }
     checkUser()
-  }, [router, supabase.auth]) // Added supabase.auth to the dependency array
+  }, [router, supabase.auth])
 
+  /**
+   * Error Handling Effect
+   * Processes URL parameters for OAuth error messages
+   * Displays error messages from failed OAuth attempts
+   */
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
     const error = searchParams.get('error')
     const details = searchParams.get('details')
     
     if (error) {
-      console.error('Login error:', error, details)
       setOauthError(details || error)
     }
   }, [])
 
+  /**
+   * Email/Password Login Handler
+   * 
+   * 1. Authenticates user with Supabase
+   * 2. Creates/updates user record in database
+   * 3. Establishes session and redirects on success
+   * 
+   * @param e - Form submission event
+   */
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
     try {
-      console.log('Attempting to sign in with email:', email)
-      console.log('Supabase URL being used:', process.env.NEXT_PUBLIC_SUPABASE_URL)
-      
+      // Authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) {
-        console.error('Supabase auth error:', error.message)
-        throw error
-      }
+      if (error) throw error
 
-      console.log('Sign in successful, user data:', data.user)
-      
-      // Create or update user entry
+      // Update user record with latest login timestamp
       const { error: upsertError } = await supabase
         .from('users')
         .upsert({ 
@@ -74,62 +91,51 @@ const LoginPage: React.FC = () => {
           last_sign_in: new Date().toISOString()
         }, { onConflict: 'id' })
 
-      if (upsertError) {
-        console.error('Error upserting user:', upsertError)
-        throw upsertError
-      }
+      if (upsertError) throw upsertError
 
-      console.log('User upserted successfully')
-
+      // Verify session establishment
       const { data: { session } } = await supabase.auth.getSession()
-      console.log('Session after login:', session ? 'exists' : 'null')
-
+      
       if (session) {
-        console.log('Redirecting to /finance')
         router.push('/finance')
       } else {
-        console.log('Session is null after successful login')
-        setError('Login successful but session not created. Please try again.')
+        throw new Error('Login successful but session not created. Please try again.')
       }
     } catch (error: any) {
-      console.error('Error details:', {
-        message: error.message,
-        status: error.status,
-        name: error.name
-      })
       setError(error.message || 'Failed to log in. Please check your credentials.')
     } finally {
       setLoading(false)
     }
   }
 
+  /**
+   * Google OAuth Login Handler
+   * 
+   * Initiates OAuth flow with Google through Supabase
+   * Configures offline access and consent prompt for better UX
+   * Redirects to Google's consent page on success
+   */
   const handleGoogleLogin = async () => {
     try {
-      console.log('Initiating Google login')
       const redirectTo = `${window.location.origin}/auth/callback`
-      console.log('Setting redirect URL:', redirectTo)
-
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo,
           queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
+            access_type: 'offline', // Enable refresh token
+            prompt: 'consent',      // Force consent screen
           },
         }
       })
 
       if (error) throw error
+      if (!data?.url) throw new Error('No redirect URL received')
 
-      if (!data?.url) {
-        throw new Error('No redirect URL received')
-      }
-
-      console.log('Redirecting to:', data.url)
+      // Redirect to Google's consent page
       window.location.href = data.url
     } catch (error) {
-      console.error('Google login error:', error)
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'An unexpected error occurred during Google login'
@@ -191,10 +197,9 @@ const LoginPage: React.FC = () => {
             className="w-full"
             onClick={(e) => {
               e.preventDefault()
-              console.log('Google button clicked') // Add this line
               handleGoogleLogin()
             }}
-            type="button" // Add this line
+            type="button"
           >
             <FaGoogle className="mr-2 h-4 w-4" />
             Sign in with Google

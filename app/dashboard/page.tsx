@@ -9,6 +9,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { isSubscriptionActive } from '@/lib/utils'
 import Script from 'next/script'
 
+/**
+ * UserDetails Interface
+ * Defines the structure of user data retrieved from Supabase Auth
+ * Optional fields account for incomplete social provider data
+ */
 interface UserDetails {
   id: string;
   email: string;
@@ -16,6 +21,13 @@ interface UserDetails {
   avatar_url?: string;
 }
 
+/**
+ * DashboardPage Component
+ * 
+ * Protected route that displays user profile, subscription status, and app features.
+ * Handles session verification, user data fetching, and subscription management.
+ * Integrates with Stripe for payment processing and subscription handling.
+ */
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<UserDetails | null>(null)
@@ -23,10 +35,18 @@ export default function DashboardPage() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive'>('inactive')
   const supabase = createClient()
 
+  /**
+   * User Data and Subscription Fetching Effect
+   * 
+   * 1. Verifies active session
+   * 2. Fetches user details from Supabase Auth
+   * 3. Checks subscription status
+   * 4. Redirects to login if session is invalid
+   */
   useEffect(() => {
     const fetchUserAndSubscription = async () => {
       try {
-        // Check for an active session
+        // Session verification - must happen before any data fetching
         const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
         if (sessionError) {
@@ -38,7 +58,7 @@ export default function DashboardPage() {
           return
         }
 
-        // Get user details from auth
+        // Fetch authenticated user details
         const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
 
         if (userError) {
@@ -46,7 +66,7 @@ export default function DashboardPage() {
         }
 
         if (authUser) {
-          // Set user details in state
+          // Transform auth data into UserDetails format
           setUser({
             id: authUser.id,
             email: authUser.email!,
@@ -54,7 +74,7 @@ export default function DashboardPage() {
             avatar_url: authUser.user_metadata?.avatar_url
           })
 
-          // Check subscription status
+          // Check subscription status from external utility
           const isActive = await isSubscriptionActive(authUser.id)
           setSubscriptionStatus(isActive ? 'active' : 'inactive')
         }
@@ -69,6 +89,11 @@ export default function DashboardPage() {
     fetchUserAndSubscription()
   }, [router, supabase])
 
+  /**
+   * Logout Handler
+   * Signs out user and clears session
+   * Redirects to home page on success
+   */
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut()
@@ -78,6 +103,7 @@ export default function DashboardPage() {
     }
   }
 
+  // Loading state with centered spinner
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -86,16 +112,21 @@ export default function DashboardPage() {
     )
   }
 
+  // Main dashboard layout
   return (
     <div className="container mx-auto p-4">
+      {/* Stripe Script for payment processing */}
       <Script src="https://js.stripe.com/v3/buy-button.js" />
+      
+      {/* Dashboard header with logout button */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <Button onClick={handleLogout} variant="outline">Logout</Button>
       </div>
       
+      {/* Dashboard grid layout */}
       <div className="grid gap-6 md:grid-cols-2">
-        {/* User Profile Card */}
+        {/* User Profile Card - Displays user information and avatar */}
         <Card>
           <CardHeader>
             <CardTitle>User Profile</CardTitle>
@@ -113,7 +144,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Subscription Card */}
+        {/* Subscription Management Card */}
         <Card>
           <CardHeader>
             <CardTitle>Subscription</CardTitle>
@@ -125,6 +156,7 @@ export default function DashboardPage() {
             </p>
           </CardContent>
           <CardFooter>
+            {/* Conditional rendering based on subscription status */}
             {subscriptionStatus === 'inactive' && (
               <stripe-buy-button
                 buy-button-id="buy_btn_1QCResHV58Ez6fBuVAn9eDpX"
@@ -140,7 +172,7 @@ export default function DashboardPage() {
           </CardFooter>
         </Card>
 
-        {/* Financial Analysis Card */}
+        {/* Financial Analysis Feature Card */}
         <Card>
           <CardHeader>
             <CardTitle>Financial Analysis</CardTitle>
@@ -150,6 +182,7 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-500">Get insights and analyze your financial data</p>
           </CardContent>
           <CardFooter>
+            {/* Access control based on subscription status */}
             {subscriptionStatus === 'active' ? (
               <Button onClick={() => router.push('/finance')}>Go to Finance Page</Button>
             ) : (
