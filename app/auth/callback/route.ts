@@ -1,6 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { AuthError } from '@supabase/supabase-js'
 
 export async function GET(request: Request) {
   try {
@@ -28,12 +29,15 @@ export async function GET(request: Request) {
           userId: data.session?.user?.id
         })
 
-        // Change redirect to dashboard
         return NextResponse.redirect(new URL('/dashboard', request.url))
       } catch (error) {
         console.error('Error in code exchange:', error)
+        const errorMessage = error instanceof AuthError 
+          ? error.message 
+          : 'An unexpected error occurred'
+          
         return NextResponse.redirect(
-          new URL(`/auth/login?error=session_error&details=${encodeURIComponent(error.message)}`, request.url)
+          new URL(`/auth/login?error=session_error&details=${encodeURIComponent(errorMessage)}`, request.url)
         )
       }
     }
@@ -41,6 +45,10 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL('/auth/login?error=no_code', request.url))
   } catch (error) {
     console.error('Callback route error:', error)
-    return NextResponse.redirect(new URL('/auth/login?error=callback_error', request.url))
+    const errorMessage = error instanceof Error 
+      ? error.message 
+      : 'An unexpected error occurred'
+      
+    return NextResponse.redirect(new URL(`/auth/login?error=callback_error&details=${encodeURIComponent(errorMessage)}`, request.url))
   }
 }

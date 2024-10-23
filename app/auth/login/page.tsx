@@ -31,7 +31,7 @@ const LoginPage: React.FC = () => {
       }
     }
     checkUser()
-  }, [router])
+  }, [router, supabase.auth]) // Added supabase.auth to the dependency array
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
@@ -130,7 +130,10 @@ const LoginPage: React.FC = () => {
       window.location.href = data.url
     } catch (error) {
       console.error('Google login error:', error)
-      setOauthError(error.message)
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'An unexpected error occurred during Google login'
+      setOauthError(errorMessage)
     }
   }
 
