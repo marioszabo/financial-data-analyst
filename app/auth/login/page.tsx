@@ -1,98 +1,150 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+// Import necessary UI components from Shadcn UI library
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+// Import Google icon from react-icons library
 import { FaGoogle } from 'react-icons/fa'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
+// Define the main LoginPage component
 const LoginPage: React.FC = () => {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [oauthError, setOauthError] = useState<string | null>(null)
+  const supabase = createClient()
 
-  // Check for existing session on component mount
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       console.log('LoginPage - Session:', session ? 'exists' : 'null')
       if (session) {
         console.log('LoginPage - Redirecting to /finance')
-        router.push('/dashboard')
+        router.push('/finance')
       }
     }
     checkUser()
   }, [router])
 
-  // Handle email/password login
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search)
+    const error = searchParams.get('error')
+    const details = searchParams.get('details')
+    
+    if (error) {
+      console.error('Login error:', error, details)
+      setOauthError(details || error)
+    }
+  }, [])
+
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
     try {
-      console.log('Attempting to sign in with:', email)
+      console.log('Attempting to sign in with email:', email)
+      console.log('Supabase URL being used:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) throw error
+      if (error) {
+        console.error('Supabase auth error:', error.message)
+        throw error
+      }
 
-      console.log('Sign in successful, data:', data)
+      console.log('Sign in successful, user data:', data.user)
+      
+      // Create or update user entry
+      const { error: upsertError } = await supabase
+        .from('users')
+        .upsert({ 
+          id: data.user.id, 
+          email: data.user.email,
+          last_sign_in: new Date().toISOString()
+        }, { onConflict: 'id' })
 
-      // Double-check session after sign-in
+      if (upsertError) {
+        console.error('Error upserting user:', upsertError)
+        throw upsertError
+      }
+
+      console.log('User upserted successfully')
+
       const { data: { session } } = await supabase.auth.getSession()
-      console.log('Session after sign in:', session ? 'exists' : 'null')
+      console.log('Session after login:', session ? 'exists' : 'null')
 
       if (session) {
         console.log('Redirecting to /finance')
-        router.push('/dashboard')
+        router.push('/finance')
       } else {
-        // Handle edge case where sign-in is successful but session is not created
-        console.log('Session is null after successful sign in')
+        console.log('Session is null after successful login')
         setError('Login successful but session not created. Please try again.')
       }
-    } catch (error) {
-      console.error('Error logging in:', error)
-      setError('Failed to log in. Please check your credentials.')
+    } catch (error: any) {
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        name: error.name
+      })
+      setError(error.message || 'Failed to log in. Please check your credentials.')
     } finally {
       setLoading(false)
     }
   }
 
-  // Handle Google OAuth login
   const handleGoogleLogin = async () => {
     try {
       console.log('Initiating Google login')
+      const redirectTo = `${window.location.origin}/auth/callback`
+      console.log('Setting redirect URL:', redirectTo)
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // Ensure redirect happens to the correct callback URL
-          redirectTo: `${window.location.origin}/auth/callback`
+          redirectTo,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         }
       })
+
       if (error) throw error
-      console.log('Google login initiated:', data)
+
+      if (!data?.url) {
+        throw new Error('No redirect URL received')
+      }
+
+      console.log('Redirecting to:', data.url)
+      window.location.href = data.url
     } catch (error) {
-      console.error('Error logging in with Google:', error)
+      console.error('Google login error:', error)
+      setOauthError(error.message)
     }
   }
 
+  // Render the login page UI
   return (
+    // Container div with flexbox for centering content
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
+      {/* Card component to contain login form */}
       <Card className="w-[350px]">
         <CardHeader>
           <CardTitle>Login</CardTitle>
           <CardDescription>Sign in to your account</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Email/Password login form */}
           <form onSubmit={handleEmailLogin}>
             <div className="grid w-full items-center gap-4">
               <div className="flex flex-col space-y-1.5">
@@ -118,13 +170,11 @@ const LoginPage: React.FC = () => {
                 />
               </div>
             </div>
-            {/* Display error message if login fails */}
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
             <Button className="w-full mt-4" type="submit" disabled={loading}>
               {loading ? 'Logging in...' : 'Log in'}
             </Button>
           </form>
-          {/* Divider between email/password and OAuth login options */}
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
@@ -133,15 +183,22 @@ const LoginPage: React.FC = () => {
               <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
             </div>
           </div>
-          {/* Google OAuth login button */}
           <Button 
             variant="outline" 
             className="w-full"
-            onClick={handleGoogleLogin}
+            onClick={(e) => {
+              e.preventDefault()
+              console.log('Google button clicked') // Add this line
+              handleGoogleLogin()
+            }}
+            type="button" // Add this line
           >
             <FaGoogle className="mr-2 h-4 w-4" />
             Sign in with Google
           </Button>
+          {oauthError && (
+            <p className="text-red-500 text-sm mt-2">{oauthError}</p>
+          )}
         </CardContent>
         <CardFooter className="flex justify-center">
           <p className="text-sm text-gray-500">

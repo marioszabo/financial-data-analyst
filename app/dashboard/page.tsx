@@ -1,18 +1,14 @@
-/// <reference path="../../types/stripe-elements.d.ts" />
-// This reference is necessary for TypeScript to recognize the custom Stripe elements
-
 'use client'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase-browser'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { isSubscriptionActive } from '@/lib/utils'
 import Script from 'next/script'
 
-// Define the structure of user details
 interface UserDetails {
   id: string;
   email: string;
@@ -25,58 +21,73 @@ export default function DashboardPage() {
   const [user, setUser] = useState<UserDetails | null>(null)
   const [loading, setLoading] = useState(true)
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive'>('inactive')
+  const supabase = createClient()
 
   useEffect(() => {
     const fetchUserAndSubscription = async () => {
-      // Check for an active session
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        // Redirect to login if no active session
+      try {
+        // Check for an active session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          throw sessionError
+        }
+
+        if (!session) {
+          router.push('/auth/login')
+          return
+        }
+
+        // Get user details from auth
+        const { data: { user: authUser }, error: userError } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw userError
+        }
+
+        if (authUser) {
+          // Set user details in state
+          setUser({
+            id: authUser.id,
+            email: authUser.email!,
+            full_name: authUser.user_metadata?.full_name,
+            avatar_url: authUser.user_metadata?.avatar_url
+          })
+
+          // Check subscription status
+          const isActive = await isSubscriptionActive(authUser.id)
+          setSubscriptionStatus(isActive ? 'active' : 'inactive')
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error)
         router.push('/auth/login')
-        return
+      } finally {
+        setLoading(false)
       }
-
-      // Fetch user details
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (user) {
-        // Set user details in state
-        setUser({
-          id: user.id,
-          email: user.email!,
-          full_name: user.user_metadata?.full_name,
-          avatar_url: user.user_metadata?.avatar_url
-        })
-
-        // Check subscription status
-        const isActive = await isSubscriptionActive(user.id)
-        setSubscriptionStatus(isActive ? 'active' : 'inactive')
-      }
-
-      setLoading(false)
     }
 
     fetchUserAndSubscription()
-  }, [router])
+  }, [router, supabase])
 
-  // Handle user logout
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut()
-      router.push('/') // Redirect to the landing page after logout
+      router.push('/')
     } catch (error) {
       console.error('Error logging out:', error)
     }
   }
 
-  // Show loading state while fetching user data
   if (loading) {
-    return <div className="flex justify-center items-center h-screen">Loading...</div>
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+      </div>
+    )
   }
 
   return (
     <div className="container mx-auto p-4">
-      {/* Load Stripe script for buy button */}
       <Script src="https://js.stripe.com/v3/buy-button.js" />
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Dashboard</h1>
@@ -115,7 +126,6 @@ export default function DashboardPage() {
           </CardContent>
           <CardFooter>
             {subscriptionStatus === 'inactive' && (
-              // Stripe buy button for inactive subscriptions
               <stripe-buy-button
                 buy-button-id="buy_btn_1QCResHV58Ez6fBuVAn9eDpX"
                 publishable-key="pk_live_51QBZP7HV58Ez6fBu8EwTkh16sFW5xX1uS1yOpLdDyEvEvJQm9ISLWmx2VpuqUXgeXvjxQT3RKIiGjx7mRxqRDerz00dae7QHXY"
@@ -123,8 +133,7 @@ export default function DashboardPage() {
               </stripe-buy-button>
             )}
             {subscriptionStatus === 'active' && (
-              // Placeholder for subscription management
-              <Button variant="outline" onClick={() => {/* Add logic to manage subscription */}}>
+              <Button variant="outline" onClick={() => {/* Add subscription management logic */}}>
                 Manage Subscription
               </Button>
             )}
@@ -142,10 +151,8 @@ export default function DashboardPage() {
           </CardContent>
           <CardFooter>
             {subscriptionStatus === 'active' ? (
-              // Allow access to finance page for active subscriptions
               <Button onClick={() => router.push('/finance')}>Go to Finance Page</Button>
             ) : (
-              // Disable access for inactive subscriptions
               <Button disabled>Subscribe to Access</Button>
             )}
           </CardFooter>

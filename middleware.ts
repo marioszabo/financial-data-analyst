@@ -6,24 +6,18 @@ export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const supabase = createMiddlewareClient({ req, res })
 
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
-    console.log('Middleware - Current path:', req.nextUrl.pathname)
-    console.log('Middleware - Session:', session ? 'exists' : 'null')
-    if (session) {
-      console.log('Middleware - User ID:', session.user.id)
-    } else {
-      console.log('Middleware - No session found')
-    }
-
-    // ... rest of the middleware function
-  } catch (e) {
-    console.error('Middleware error:', e)
-    return res
+  // If user is signed in and the current path is /auth/login redirect the user to /dashboard
+  if (session && req.nextUrl.pathname === '/auth/login') {
+    return NextResponse.redirect(new URL('/dashboard', req.url))
   }
+
+  return res
 }
 
-// ... rest of the file
+export const config = {
+  matcher: ['/auth/login', '/auth/callback', '/dashboard/:path*', '/finance/:path*']
+}
