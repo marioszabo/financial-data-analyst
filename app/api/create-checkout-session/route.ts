@@ -16,7 +16,7 @@ import Stripe from 'stripe'
 
 // Initialize Stripe with type-safe configuration
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-09.30.acacia', // Lock API version for stability
+  apiVersion: '2024-09-30.acacia', // Lock API version for stability
 })
 
 /**
