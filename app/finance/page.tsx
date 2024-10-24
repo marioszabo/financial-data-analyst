@@ -41,6 +41,7 @@ import {
   readFileAsBase64,
   readFileAsPDFText,
 } from "@/utils/fileHandling";
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 // Types
 interface Message {
@@ -195,6 +196,7 @@ const ChartPagination = ({
 );
 
 export default function FinancePage() {
+  const supabase = createClientComponentClient()
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const [messages, setMessages] = useState<Message[]>([]);
@@ -214,17 +216,37 @@ export default function FinancePage() {
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log('Session in FinancePage:', session ? 'exists' : 'null')
-      if (!session) {
-        console.log('Redirecting to /auth/login from FinancePage')
-        router.push('/auth/login')
-      } else {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session) {
+          console.log('No session, redirecting to login')
+          router.push('/auth/login')
+          return
+        }
+
+        // Check subscription status
+        const { data: subscription } = await supabase
+          .from('subscriptions')
+          .select('status')
+          .eq('user_id', session.user.id)
+          .single()
+
+        if (!subscription || subscription.status !== 'active') {
+          console.log('No active subscription, redirecting to dashboard')
+          router.push('/dashboard')
+          return
+        }
+
         setIsLoading(false)
+      } catch (error) {
+        console.error('Session check error:', error)
+        router.push('/auth/login')
       }
     }
+
     checkUser()
-  }, [router])
+  }, [router, supabase])
 
   useEffect(() => {
     const scrollToBottom = () => {
