@@ -113,6 +113,18 @@ export async function POST(req: NextRequest) {
           }
         }
         break
+
+      case 'customer.subscription.updated':
+        const updatedSubscription = event.data.object as Stripe.Subscription;
+        
+        await supabase
+          .from('subscriptions')
+          .update({ 
+            status: updatedSubscription.status,
+            // Update other relevant fields
+          })
+          .eq('stripe_subscription_id', updatedSubscription.id);
+        break
     }
 
     return NextResponse.json({ received: true })
