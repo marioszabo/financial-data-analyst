@@ -16,7 +16,7 @@ import Stripe from 'stripe'
 
 // Initialize Stripe with type-safe configuration
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-09-30.acacia', // Lock API version for stability
+  apiVersion: '2024-09-30.acacia', // Fixed the version string format
 })
 
 /**
@@ -44,18 +44,22 @@ export async function POST(req: NextRequest) {
       payment_method_types: ['card'],
       line_items: [
         {
-          price: 'price_1QDLFgHV58Ez6fBuBiIuGy70', // Your existing price ID
+          price: 'price_1QDLFgHV58Ez6fBuBiIuGy70', // Your recurring price ID
           quantity: 1,
         },
       ],
-      mode: 'subscription', // Changed to subscription
+      mode: 'subscription',
       success_url: `${req.headers.get('origin')}/dashboard?success=true`,
       cancel_url: `${req.headers.get('origin')}/dashboard?canceled=true`,
-      client_reference_id: userId,
-      customer_creation: 'always',
       metadata: {
-        userId: userId, // Backup for webhook
+        userId: userId,
       },
+      subscription_data: {
+        metadata: {
+          userId: userId, // Add userId to subscription metadata
+        },
+      },
+      allow_promotion_codes: true,
     })
 
     return NextResponse.json({ sessionId: session.id })

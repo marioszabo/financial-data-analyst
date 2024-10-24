@@ -8,6 +8,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { isSubscriptionActive } from '@/lib/utils'
 import Script from 'next/script'
+import { loadStripe } from '@stripe/stripe-js'
+
+// Initialize Stripe
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 /**
  * UserDetails Interface
@@ -32,6 +36,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<UserDetails | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive'>('inactive')
   const supabase = createClient()
 
@@ -103,11 +108,55 @@ export default function DashboardPage() {
     }
   }
 
+  // Add this function
+  const handleSubscribe = async () => {
+    try {
+      setIsProcessing(true)
+      
+      // Create checkout session
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user?.id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok')
+      }
+
+      const { sessionId } = await response.json()
+      
+      // Get Stripe instance
+      const stripe = await stripePromise
+      if (!stripe) {
+        throw new Error('Stripe failed to initialize')
+      }
+
+      // Redirect to checkout
+      const { error } = await stripe.redirectToCheckout({ sessionId })
+      if (error) {
+        throw error
+      }
+    } catch (error) {
+      console.error('Subscription error:', error)
+      // You might want to show an error toast here
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // Loading state with centered spinner
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900"></div>
+        <div className="space-y-4 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
+          <p className="text-gray-500">Loading your dashboard...</p>
+        </div>
       </div>
     )
   }
@@ -148,24 +197,50 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Subscription</CardTitle>
-            <CardDescription>Manage your subscription</CardDescription>
+            <CardDescription>
+              {subscriptionStatus === 'active' 
+                ? 'Manage your active subscription'
+                : 'Subscribe to access all features'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-500">
-              Current Plan: {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-500">
+                Status: <span className={`font-medium ${
+                  subscriptionStatus === 'active' ? 'text-green-600' : 'text-yellow-600'
+                }`}>
+                  {subscriptionStatus === 'active' ? 'Active' : 'Inactive'}
+                </span>
+              </p>
+              {subscriptionStatus === 'inactive' && (
+                <p className="text-sm text-gray-500">
+                  Subscribe to unlock all features including AI-powered financial analysis
+                </p>
+              )}
+            </div>
           </CardContent>
           <CardFooter>
-            {/* Conditional rendering based on subscription status */}
-            {subscriptionStatus === 'inactive' && (
-              <stripe-buy-button
-                buy-button-id="buy_btn_1QCResHV58Ez6fBuVAn9eDpX"
-                publishable-key="pk_live_51QBZP7HV58Ez6fBu8EwTkh16sFW5xX1uS1yOpLdDyEvEvJQm9ISLWmx2VpuqUXgeXvjxQT3RKIiGjx7mRxqRDerz00dae7QHXY"
+            {subscriptionStatus === 'inactive' ? (
+              <Button 
+                onClick={handleSubscribe} 
+                disabled={isProcessing}
+                className="w-full"
               >
-              </stripe-buy-button>
-            )}
-            {subscriptionStatus === 'active' && (
-              <Button variant="outline" onClick={() => {/* Add subscription management logic */}}>
+                {isProcessing ? (
+                  <>
+                    <span className="animate-spin mr-2">⭮</span>
+                    Processing...
+                  </>
+                ) : (
+                  'Subscribe Now'
+                )}
+              </Button>
+            ) : (
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => window.open('https://billing.stripe.com/p/login/test_28o5kQ3Yf2Xf2CAbII')}
+              >
                 Manage Subscription
               </Button>
             )}
