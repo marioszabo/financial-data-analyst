@@ -35,29 +35,35 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 export async function POST(req: NextRequest) {
   const { userId } = await req.json()
 
-  // Create checkout session with subscription configuration
-  const session = await stripe.checkout.sessions.create({
-    payment_method_types: ['card'],
-    line_items: [
-      {
-        price: 'price_1QCRefHV58Ez6fBugM64KfIx', // Fixed price ID for subscription
-        quantity: 1,
-      },
-    ],
-    mode: 'subscription',
-    
-    // Dynamic success/cancel URLs based on request origin
-    // {CHECKOUT_SESSION_ID} is replaced by Stripe for session tracking
-    success_url: `${req.headers.get('origin')}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${req.headers.get('origin')}/dashboard`,
-    
-    // Link session to user for webhook processing
-    client_reference_id: userId,
-    
-    // Create new customer to track subscription
-    customer_creation: 'always',
-  })
+  if (!userId) {
+    return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+  }
 
-  // Return session ID for client-side redirect to Stripe Checkout
-  return NextResponse.json({ sessionId: session.id })
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: 'price_1QDLFgHV58Ez6fBuBiIuGy70', // Your existing price ID
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription', // Changed to subscription
+      success_url: `${req.headers.get('origin')}/dashboard?success=true`,
+      cancel_url: `${req.headers.get('origin')}/dashboard?canceled=true`,
+      client_reference_id: userId,
+      customer_creation: 'always',
+      metadata: {
+        userId: userId, // Backup for webhook
+      },
+    })
+
+    return NextResponse.json({ sessionId: session.id })
+  } catch (error) {
+    console.error('Stripe session creation error:', error)
+    return NextResponse.json(
+      { error: 'Failed to create checkout session' },
+      { status: 500 }
+    )
+  }
 }
