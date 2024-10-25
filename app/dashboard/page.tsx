@@ -159,6 +159,28 @@ export default function DashboardPage() {
     }
   }
 
+  // Add this function to your DashboardPage component
+  const handleManageSubscription = async () => {
+    try {
+      setIsProcessing(true)
+      
+      const response = await fetch('/api/create-portal-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id })
+      })
+
+      if (!response.ok) throw new Error('Failed to create portal session')
+
+      const { url } = await response.json()
+      window.location.href = url
+    } catch (error) {
+      console.error('Error accessing customer portal:', error)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   // Show loading state while fetching initial data
   if (loading) {
     return (
@@ -316,9 +338,17 @@ export default function DashboardPage() {
                 <Button 
                   variant="outline" 
                   className="w-full"
-                  onClick={() => window.open('https://billing.stripe.com/p/login/test_28o5kQ3Yf2Xf2CAbII')}
+                  onClick={handleManageSubscription}
+                  disabled={isProcessing}
                 >
-                  Manage Subscription
+                  {isProcessing ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900 mr-2" />
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    'Manage Subscription'
+                  )}
                 </Button>
               )}
             </CardFooter>

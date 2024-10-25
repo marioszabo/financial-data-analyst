@@ -115,15 +115,23 @@ export async function POST(req: NextRequest) {
         break
 
       case 'customer.subscription.updated':
-        const updatedSubscription = event.data.object as Stripe.Subscription;
-        
-        await supabase
-          .from('subscriptions')
-          .update({ 
-            status: updatedSubscription.status,
-            // Update other relevant fields
-          })
-          .eq('stripe_subscription_id', updatedSubscription.id);
+        const updatedSubscription = event.data.object as Stripe.Subscription
+        const updatedUserId = updatedSubscription.metadata.userId
+
+        if (updatedUserId) {
+          const { error: updateError } = await supabase
+            .from('subscriptions')
+            .update({
+              status: updatedSubscription.status,
+              current_period_start: new Date(updatedSubscription.current_period_start * 1000).toISOString(),
+              current_period_end: new Date(updatedSubscription.current_period_end * 1000).toISOString(),
+            })
+            .match({ user_id: updatedUserId })
+
+          if (updateError) {
+            console.error('❌ Subscription update failed:', updateError)
+          }
+        }
         break
     }
 
