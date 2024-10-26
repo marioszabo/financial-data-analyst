@@ -30,6 +30,7 @@ interface SubscriptionDetails {
   start_date?: string
   end_date?: string
   current_period_end?: string
+  cancel_at_period_end?: boolean  // Add this property
 }
 
 /**
@@ -65,7 +66,8 @@ export default function DashboardPage() {
   // State for subscription management
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive'>('inactive')
   const [subscriptionDetails, setSubscriptionDetails] = useState<SubscriptionDetails>({
-    status: 'inactive'
+    status: 'inactive',
+    cancel_at_period_end: false  // Add default value
   })
 
   /**
@@ -109,7 +111,7 @@ export default function DashboardPage() {
             status: subscription.cancel_at_period_end ? 'canceled' : subscription.status,
             start_date: subscription.created_at,
             current_period_end: subscription.current_period_end,
-            cancel_at_period_end: subscription.cancel_at_period_end
+            cancel_at_period_end: subscription.cancel_at_period_end  // Now TypeScript knows about this property
           })
         }
 
