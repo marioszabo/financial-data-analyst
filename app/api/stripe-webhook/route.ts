@@ -18,8 +18,8 @@ import { createClient } from '@/lib/supabase-server'
  * - STRIPE_WEBHOOK_SECRET
  */
 
-// This tells Next.js to use the Edge runtime for this route
-export const runtime = 'edge'
+// Explicitly set runtime to Node.js
+export const runtime = 'nodejs'
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
     let event: Stripe.Event
     
     try {
-      // Changed to constructEventAsync
-      event = await stripe.webhooks.constructEventAsync(
+      // Use regular constructEvent in Node.js runtime
+      event = stripe.webhooks.constructEvent(
         body,
         sig,
         process.env.STRIPE_WEBHOOK_SECRET!
