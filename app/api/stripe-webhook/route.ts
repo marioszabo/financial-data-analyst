@@ -25,9 +25,8 @@ import { headers } from 'next/headers'
  * - Tracks cancellation and period end dates
  */
 
-// New way to configure the route segment
-export const dynamic = 'force-dynamic'
-export const runtime = 'edge'
+// Use Node.js runtime for better crypto support
+export const runtime = 'nodejs'
 
 // Initialize Stripe with version lock for API stability
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -109,17 +108,9 @@ export async function POST(req: NextRequest) {
           subscriptionId: subscription.id
         })
 
-        // Log upsert attempt
-        console.log('Attempting database upsert:', {
-          userId: userId,
-          subscriptionId: subscription.id,
-          customerId: subscription.customer,
-          status: subscription.status
-        })
-
         // Upsert subscription data
         // Uses onConflict to handle potential duplicate events
-        const { data, error: subscriptionError } = await supabase
+        const { error: subscriptionError } = await supabase
           .from('subscriptions')
           .upsert({
             user_id: userId,
@@ -141,17 +132,6 @@ export async function POST(req: NextRequest) {
           }, {
             onConflict: 'user_id' // Update existing subscription if found
           })
-
-        // Log upsert result
-        if (subscriptionError) {
-          console.error('Database upsert failed:', {
-            error: subscriptionError,
-            errorMessage: subscriptionError.message,
-            details: subscriptionError.details
-          })
-        } else {
-          console.log('Database upsert successful:', { data })
-        }
 
         if (subscriptionError) {
           console.error('❌ Subscription update failed:', subscriptionError)
@@ -196,11 +176,5 @@ export async function POST(req: NextRequest) {
       { error: 'Webhook Error' },
       { status: 400 }
     )
-  }
-}
-
-export const config = {
-  api: {
-    bodyParser: false // Important: disable body parsing
   }
 }
