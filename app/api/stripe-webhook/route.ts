@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
-import crypto from 'crypto'
+import { createClient } from '@/lib/supabase-server'
 
 /**
  * Stripe Webhook Handler
@@ -27,18 +26,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-09-30.acacia'
 })
 
-// Initialize Supabase with direct credentials
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!, // Important: Use service role key for webhook
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
-
 /**
  * Webhook Event Handler
  * 
@@ -52,19 +39,43 @@ const supabase = createClient(
  * - payment_intent.succeeded
  */
 export async function POST(req: NextRequest) {
-  const body = await req.text()
-  const sig = req.headers.get('stripe-signature') as string
-
-  let event: Stripe.Event
-
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    )
+    console.log('Webhook endpoint hit!')
+    const body = await req.text()
+    const sig = req.headers.get('stripe-signature')
 
-    console.log('Processing webhook event:', event.type)
+    console.log('Webhook details:', {
+      hasSignature: !!sig,
+      bodyLength: body.length,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.slice(0, 10) + '...' // Log partial secret for verification
+    })
+
+    if (!sig) {
+      console.error('No stripe signature found')
+      return NextResponse.json({ error: 'No stripe signature' }, { status: 400 })
+    }
+
+    let event: Stripe.Event
+    
+    try {
+      event = stripe.webhooks.constructEvent(
+        body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      )
+      console.log('Event constructed successfully:', event.type)
+    } catch (err) {
+      console.error('Webhook construction error:', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+        signature: sig.slice(0, 20) + '...'
+      })
+      return NextResponse.json(
+        { error: 'Webhook signature verification failed' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createClient()
 
     switch (event.type) {
       case 'customer.subscription.created':
@@ -81,7 +92,6 @@ export async function POST(req: NextRequest) {
 
         if (userId) {
           const subscriptionData = {
-            id: crypto.randomUUID(), // Only for new subscriptions
             user_id: userId,
             stripe_subscription_id: subscription.id,
             stripe_customer_id: subscription.customer as string,
@@ -89,7 +99,6 @@ export async function POST(req: NextRequest) {
             price_id: subscription.items.data[0].price.id,
             current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
             current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             cancel_at_period_end: subscription.cancel_at_period_end,
             canceled_at: subscription.canceled_at 
@@ -100,15 +109,17 @@ export async function POST(req: NextRequest) {
               : null
           }
 
-          // Check if subscription exists
+          console.log('Attempting Supabase update with:', subscriptionData)
+
+          // First, verify if subscription exists
           const { data: existingSub, error: fetchError } = await supabase
             .from('subscriptions')
-            .select('id')
+            .select('*')
             .eq('user_id', userId)
             .single()
 
           if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found"
-            console.error('Error checking existing subscription:', fetchError)
+            console.error('Error fetching existing subscription:', fetchError)
             return NextResponse.json({ error: fetchError.message }, { status: 500 })
           }
 
@@ -124,7 +135,7 @@ export async function POST(req: NextRequest) {
             // Insert new subscription
             const { error: insertError } = await supabase
               .from('subscriptions')
-              .insert([subscriptionData])
+              .insert([{ ...subscriptionData, created_at: new Date().toISOString() }])
             error = insertError
           }
 
@@ -150,10 +161,15 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true })
   } catch (error) {
-    console.error('Webhook error:', error)
+    console.error('Webhook handler error:', {
+      error,
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    })
+    
     return NextResponse.json(
-      { error: 'Webhook error' },
-      { status: 400 }
+      { error: 'Webhook processing failed' },
+      { status: 500 }
     )
   }
 }
