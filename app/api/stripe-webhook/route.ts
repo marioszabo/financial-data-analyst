@@ -28,7 +28,7 @@ import { headers } from 'next/headers'
 // Route Segment Configuration - this replaces the old config export
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 300 // 5 minutes timeout for webhook processing
+export const maxDuration = 60 // 5 minutes timeout for webhook processing
 
 // Initialize Stripe with version lock for API stability
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
