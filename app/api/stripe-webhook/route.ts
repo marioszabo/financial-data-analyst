@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabase } from '@/lib/supabase'
+import { headers } from 'next/headers'
 
 /**
  * Stripe Webhook Handler
  * 
  * Processes subscription events from Stripe and updates Supabase database.
- * Uses Edge runtime for improved performance and reliability.
+ * Uses Node.js runtime for improved performance and reliability.
  * 
  * Security considerations:
  * - Validates webhook signatures
@@ -18,8 +19,8 @@ import { supabase } from '@/lib/supabase'
  * - STRIPE_WEBHOOK_SECRET
  */
 
-// Explicitly set runtime to Edge
-export const runtime = 'edge'
+// Change to Node.js runtime
+export const runtime = 'nodejs'
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -39,26 +40,34 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
  * - payment_intent.succeeded
  */
 export async function POST(req: NextRequest) {
-  const body = await req.text()
-  const sig = req.headers.get('stripe-signature') as string
-
-  let event: Stripe.Event
-
   try {
-    event = await stripe.webhooks.constructEventAsync(
-      body,
-      sig,
+    // Get the raw body
+    const rawBody = await req.text()
+    
+    // Get headers using next/headers
+    const headersList = headers()
+    const signature = headersList.get('stripe-signature')
+
+    console.log('Webhook request details:', {
+      hasSignature: !!signature,
+      signatureValue: signature?.substring(0, 20) + '...',
+      bodyLength: rawBody.length,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.substring(0, 10) + '...'
+    })
+
+    if (!signature) {
+      throw new Error('No stripe signature found')
+    }
+
+    // Verify the event
+    const event = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
-  } catch (err: any) {
-    console.error('🚨 Webhook signature verification failed:', err.message)
-    return NextResponse.json(
-      { error: `Webhook Error: ${err.message}` },
-      { status: 400 }
-    )
-  }
 
-  try {
+    console.log('Event verified:', event.type)
+
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
@@ -136,10 +145,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ received: true })
   } catch (error) {
-    console.error('Webhook processing error:', error)
+    console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown error')
     return NextResponse.json(
-      { error: 'Webhook processing failed' },
-      { status: 500 }
+      { error: 'Webhook Error' },
+      { status: 400 }
     )
   }
 }
