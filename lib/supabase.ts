@@ -7,9 +7,21 @@ import { createClient } from '@supabase/supabase-js'
  * Environment variables must be set in .env.local:
  * - NEXT_PUBLIC_SUPABASE_URL: Your Supabase project URL
  * - NEXT_PUBLIC_SUPABASE_ANON_KEY: Your public anon key
+ * 
+ * Security considerations:
+ * - Uses PKCE flow for enhanced OAuth security
+ * - Implements automatic token refresh
+ * - Handles session persistence safely
+ * - Manages storage based on environment
+ * 
+ * Usage restrictions:
+ * - Anon key must have limited RLS policies
+ * - Only public tables should be accessible
+ * - Sensitive operations require server-side key
  */
 
-// Validate required environment variables
+// Validate required environment variables at startup
+// This prevents runtime errors from missing configuration
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -26,6 +38,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
  * - detectSessionInUrl: Handles OAuth callbacks
  * - flowType: Uses PKCE flow for enhanced security
  * - storage: Uses localStorage in browser, undefined in SSR
+ * 
+ * Environment handling:
+ * - Browser: Uses localStorage for session persistence
+ * - Server: Disables storage to prevent SSR issues
+ * - Edge: Compatible with Edge runtime restrictions
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -40,7 +57,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 /**
  * Global error handler for unhandled promise rejections
  * Only attached in browser environment to prevent SSR issues
- * Helps debug authentication and API call failures
+ * 
+ * Purpose:
+ * - Catches authentication failures
+ * - Logs API call errors
+ * - Helps debug session issues
+ * - Prevents silent failures
+ * 
+ * Note: Only logs to console in development
+ * Production should use proper error tracking
  */
 if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', (event) => {

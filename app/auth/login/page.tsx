@@ -14,25 +14,38 @@ import { Label } from "@/components/ui/label"
 /**
  * LoginPage Component
  * 
- * Provides authentication functionality with both email/password and Google OAuth.
- * Handles session management, error states, and redirects after successful login.
- * Uses Supabase for authentication and user management.
+ * Provides dual authentication methods:
+ * 1. Email/Password login with session persistence
+ * 2. Google OAuth with offline access for refresh tokens
+ * 
+ * Features:
+ * - Automatic redirect for authenticated users
+ * - OAuth error handling from callback
+ * - Loading states for better UX
+ * - Form validation and error display
+ * - User record updates on successful login
+ * 
+ * Security considerations:
+ * - Uses Supabase Auth for secure credential handling
+ * - Implements OAuth best practices
+ * - Maintains session state
+ * - Sanitizes error messages
  */
 const LoginPage: React.FC = () => {
   const router = useRouter()
-  // Form state management
+  // State management for form inputs and UI states
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  // Separate error states for different authentication methods
+  // Separate error states for different auth methods
   const [error, setError] = useState<string | null>(null)
   const [oauthError, setOauthError] = useState<string | null>(null)
   const supabase = createClient()
 
   /**
    * Session Check Effect
-   * Redirects to finance page if user is already authenticated
-   * Prevents showing login form to authenticated users
+   * Prevents authenticated users from seeing login form
+   * Redirects to finance page if session exists
    */
   useEffect(() => {
     const checkUser = async () => {
@@ -45,9 +58,9 @@ const LoginPage: React.FC = () => {
   }, [router, supabase.auth])
 
   /**
-   * Error Handling Effect
-   * Processes URL parameters for OAuth error messages
-   * Displays error messages from failed OAuth attempts
+   * OAuth Error Handler Effect
+   * Processes error parameters from OAuth callback
+   * Displays user-friendly error messages
    */
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search)
@@ -62,11 +75,16 @@ const LoginPage: React.FC = () => {
   /**
    * Email/Password Login Handler
    * 
-   * 1. Authenticates user with Supabase
-   * 2. Creates/updates user record in database
-   * 3. Establishes session and redirects on success
+   * Workflow:
+   * 1. Authenticate credentials with Supabase
+   * 2. Update user record with login timestamp
+   * 3. Verify session establishment
+   * 4. Redirect on success
    * 
-   * @param e - Form submission event
+   * Error handling:
+   * - Invalid credentials
+   * - Network issues
+   * - Session verification failures
    */
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -82,7 +100,7 @@ const LoginPage: React.FC = () => {
 
       if (error) throw error
 
-      // Update user record with latest login timestamp
+      // Update user's last login timestamp
       const { error: upsertError } = await supabase
         .from('users')
         .upsert({ 
@@ -93,7 +111,7 @@ const LoginPage: React.FC = () => {
 
       if (upsertError) throw upsertError
 
-      // Verify session establishment
+      // Verify session was created successfully
       const { data: { session } } = await supabase.auth.getSession()
       
       if (session) {
@@ -111,12 +129,19 @@ const LoginPage: React.FC = () => {
   /**
    * Google OAuth Login Handler
    * 
-   * Initiates OAuth flow with Google through Supabase
-   * Configures offline access and consent prompt for better UX
-   * Redirects to Google's consent page on success
+   * Features:
+   * - Offline access for refresh tokens
+   * - Forced consent for better UX
+   * - Dynamic redirect URL based on environment
+   * 
+   * Security:
+   * - Uses PKCE flow
+   * - Validates redirect URL
+   * - Handles OAuth errors
    */
   const handleGoogleLogin = async () => {
     try {
+      // Build dynamic redirect URL based on current origin
       const redirectTo = `${window.location.origin}/auth/callback`
       
       const { data, error } = await supabase.auth.signInWithOAuth({

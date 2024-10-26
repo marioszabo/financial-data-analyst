@@ -12,8 +12,24 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
  * - Maintains session state across page navigation
  * - Provides real-time subscription capabilities
  * 
- * Note: This client should only be used in components marked with 'use client'
- * For server components, use supabase-server.ts instead
+ * Security considerations:
+ * - Uses secure cookie storage for tokens
+ * - Implements PKCE flow for auth
+ * - Handles token rotation automatically
+ * - Prevents token exposure in localStorage
+ * 
+ * Usage:
+ * ```tsx
+ * 'use client'
+ * const supabase = createClient()
+ * const { data } = await supabase.from('table').select()
+ * ```
+ * 
+ * Limitations:
+ * - Must be used within 'use client' components only
+ * - Not suitable for server-side operations
+ * - Requires client-side JavaScript
+ * - Limited to public API operations
  * 
  * @returns A configured Supabase client for client-side operations
  */

@@ -11,11 +11,12 @@ import Script from 'next/script'
 import { loadStripe } from '@stripe/stripe-js'
 import { ChartBar, MessageSquare, Brain, ArrowRight, Settings, CreditCard, LogOut } from 'lucide-react'
 
+// Initialize Stripe outside component to prevent multiple instances
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 /**
- * Interface for user details retrieved from Supabase auth
- * Contains essential user information for display and API calls
+ * Core interfaces for user and subscription management
+ * Used throughout the dashboard for type safety and data consistency
  */
 interface UserDetails {
   id: string
@@ -24,10 +25,6 @@ interface UserDetails {
   avatar_url?: string
 }
 
-/**
- * Interface for subscription status and timing details
- * Tracks the active state and important dates for user subscriptions
- */
 interface SubscriptionDetails {
   status: 'active' | 'inactive'
   start_date?: string
@@ -37,8 +34,23 @@ interface SubscriptionDetails {
 
 /**
  * Dashboard Page Component
- * Main dashboard interface showing user profile, subscription status, and feature access
- * Handles user session verification, subscription management, and navigation
+ * 
+ * Core features:
+ * - User profile display and management
+ * - Subscription status tracking
+ * - Feature access control based on subscription
+ * - Stripe integration for payments
+ * 
+ * Security considerations:
+ * - Client-side session validation
+ * - Protected route access
+ * - Secure payment handling
+ * 
+ * State management:
+ * - User details
+ * - Subscription status
+ * - Loading states
+ * - Processing states for actions
  */
 export default function DashboardPage() {
   // Initialize router and state management
@@ -87,16 +99,17 @@ export default function DashboardPage() {
         // Fetch subscription status from database
         const { data: subscription } = await supabase
           .from('subscriptions')
-          .select('status, created_at, current_period_end')
+          .select('status, created_at, current_period_end, cancel_at_period_end')
           .eq('user_id', authUser.id)
           .single()
 
         // Update subscription details if found
         if (subscription) {
           setSubscriptionDetails({
-            status: subscription.status === 'active' ? 'active' : 'inactive',
+            status: subscription.cancel_at_period_end ? 'canceled' : subscription.status,
             start_date: subscription.created_at,
-            current_period_end: subscription.current_period_end
+            current_period_end: subscription.current_period_end,
+            cancel_at_period_end: subscription.cancel_at_period_end
           })
         }
 
@@ -128,15 +141,20 @@ export default function DashboardPage() {
   }
 
   /**
-   * Handles subscription process
-   * Creates Stripe checkout session and redirects to payment page
-   * Updates processing state for UI feedback
+   * Subscription Handler
+   * Initiates Stripe checkout flow with error handling
+   * Maintains UI state during processing
+   * 
+   * Security:
+   * - Server-side session creation
+   * - Client-side redirect handling
+   * - Error state management
    */
   const handleSubscribe = async () => {
     try {
       setIsProcessing(true)
       
-      // Initialize checkout session with Stripe
+      // Create checkout session with user context
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -149,7 +167,7 @@ export default function DashboardPage() {
       const stripe = await stripePromise
       if (!stripe) throw new Error('Stripe failed to initialize')
 
-      // Redirect to Stripe checkout
+      // Redirect to Stripe's hosted checkout
       const { error } = await stripe.redirectToCheckout({ sessionId })
       if (error) throw error
     } catch (error) {
@@ -159,11 +177,22 @@ export default function DashboardPage() {
     }
   }
 
-  // Add this function to your DashboardPage component
+  /**
+   * Subscription Management Handler
+   * Creates and redirects to Stripe Customer Portal
+   * Enables subscription management and cancellation
+   * 
+   * Features:
+   * - Billing history access
+   * - Payment method updates
+   * - Plan changes
+   * - Cancellation handling
+   */
   const handleManageSubscription = async () => {
     try {
       setIsProcessing(true)
       
+      // Create portal session with user context
       const response = await fetch('/api/create-portal-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -262,25 +291,29 @@ export default function DashboardPage() {
                 <span>Subscription</span>
               </CardTitle>
               <CardDescription className="text-black">
-                {subscriptionDetails.status === 'active' 
-                  ? 'Your subscription is active'
-                  : 'Upgrade to access all features'}
+                {subscriptionDetails.cancel_at_period_end 
+                  ? 'Your subscription has been canceled'
+                  : subscriptionDetails.status === 'active' 
+                    ? 'Your subscription is active'
+                    : 'Upgrade to access all features'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {/* Status Indicator */}
                 <div className="flex items-center space-x-2">
                   <div className={`h-2.5 w-2.5 rounded-full ${
-                    subscriptionDetails.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'
+                    subscriptionDetails.cancel_at_period_end ? 'bg-yellow-500' :
+                    subscriptionDetails.status === 'active' ? 'bg-green-500' : 
+                    'bg-red-500'
                   }`} />
                   <span className="font-medium text-black">
-                    {subscriptionDetails.status === 'active' ? 'Active' : 'Inactive'}
+                    {subscriptionDetails.cancel_at_period_end ? 'Canceled' :
+                     subscriptionDetails.status === 'active' ? 'Active' : 
+                     'Inactive'}
                   </span>
                 </div>
 
-                {/* Subscription Timing Details */}
-                {subscriptionDetails.status === 'active' && (
+                {(subscriptionDetails.status === 'active' || subscriptionDetails.cancel_at_period_end) && (
                   <div className="space-y-2 pt-2 border-t border-gray-100">
                     <div className="space-y-1">
                       <div className="text-sm text-black">Subscribed on</div>
@@ -293,7 +326,9 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="space-y-1">
-                      <div className="text-sm text-black">Next billing date</div>
+                      <div className="text-sm text-black">
+                        {subscriptionDetails.cancel_at_period_end ? 'Access until' : 'Next billing date'}
+                      </div>
                       <div className="font-medium text-black">
                         {new Date(subscriptionDetails.current_period_end!).toLocaleDateString('en-US', {
                           year: 'numeric',
@@ -303,15 +338,11 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="text-xs text-black mt-2">
-                      Your subscription will automatically renew on the next billing date
+                      {subscriptionDetails.cancel_at_period_end 
+                        ? 'Your subscription has been canceled and will not renew. You have access until the end date above.'
+                        : 'Your subscription will automatically renew on the next billing date'}
                     </div>
                   </div>
-                )}
-
-                {subscriptionDetails.status === 'inactive' && (
-                  <p className="text-sm text-black">
-                    Get access to AI-powered financial analysis and more
-                  </p>
                 )}
               </div>
             </CardContent>
