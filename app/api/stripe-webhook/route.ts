@@ -25,8 +25,9 @@ import { headers } from 'next/headers'
  * - Tracks cancellation and period end dates
  */
 
-// Use Node.js runtime for better crypto support
-export const runtime = 'nodejs'
+// New way to configure the route segment
+export const dynamic = 'force-dynamic'
+export const runtime = 'edge'
 
 // Initialize Stripe with version lock for API stability
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
