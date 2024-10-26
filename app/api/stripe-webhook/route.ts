@@ -25,8 +25,10 @@ import { headers } from 'next/headers'
  * - Tracks cancellation and period end dates
  */
 
-// Use Node.js runtime for better crypto support
+// Route Segment Configuration - this replaces the old config export
+export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+export const maxDuration = 300 // 5 minutes timeout for webhook processing
 
 // Initialize Stripe with version lock for API stability
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -47,134 +49,92 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
  */
 export async function POST(req: NextRequest) {
   try {
-    // Get raw body for signature verification
-    const rawBody = await req.text()
-    
-    // Debug logging
-    console.log('Webhook received:', {
-      headers: Object.fromEntries(req.headers),
-      bodyPreview: rawBody.substring(0, 100) // Log first 100 chars only
-    })
-    
-    // Get Stripe signature from headers
-    // This is used to verify the webhook came from Stripe
-    const headersList = headers()
-    const signature = headersList.get('stripe-signature')
-
-    // Log webhook details for debugging
-    // Only logs partial secrets for security
-    console.log('Webhook request details:', {
-      hasSignature: !!signature,
-      signatureValue: signature?.substring(0, 20) + '...',
-      bodyLength: rawBody.length,
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.substring(0, 10) + '...'
-    })
+    const body = await req.text()
+    const signature = headers().get('stripe-signature')
 
     if (!signature) {
-      throw new Error('No stripe signature found')
+      console.error('No stripe signature found')
+      return NextResponse.json(
+        { error: 'No signature found' },
+        { status: 400 }
+      )
     }
 
-    // Verify webhook signature
-    // This prevents unauthorized webhook calls
+    // Verify the event
     const event = stripe.webhooks.constructEvent(
-      rawBody,
+      body,
       signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
-    console.log('Event verified:', event.type)
+    // Return 200 immediately after verification
+    // This follows Stripe's best practice of quick response
+    const response = NextResponse.json({ received: true })
 
-    switch (event.type) {
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-        const subscription = event.data.object as Stripe.Subscription
-        const userId = subscription.metadata.userId
+    // Process the event asynchronously
+    handleWebhookEvent(event).catch(console.error)
 
-        // Verify user ID exists in metadata
-        // This ensures we only process subscriptions we created
-        if (!userId) {
-          console.error('No user ID found in webhook')
-          return NextResponse.json(
-            { error: 'No user ID found' },
-            { status: 400 }
-          )
-        }
-
-        // Log subscription processing details
-        console.log('Processing subscription:', {
-          type: event.type,
-          userId,
-          status: subscription.status,
-          subscriptionId: subscription.id
-        })
-
-        // Upsert subscription data
-        // Uses onConflict to handle potential duplicate events
-        const { error: subscriptionError } = await supabase
-          .from('subscriptions')
-          .upsert({
-            user_id: userId,
-            stripe_subscription_id: subscription.id,
-            stripe_customer_id: subscription.customer as string,
-            status: subscription.status,
-            price_id: subscription.items.data[0].price.id,
-            // Convert Unix timestamps to ISO strings for database
-            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-            cancel_at_period_end: subscription.cancel_at_period_end,
-            canceled_at: subscription.canceled_at 
-              ? new Date(subscription.canceled_at * 1000).toISOString() 
-              : null,
-            cancel_at: subscription.cancel_at 
-              ? new Date(subscription.cancel_at * 1000).toISOString() 
-              : null,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'user_id' // Update existing subscription if found
-          })
-
-        if (subscriptionError) {
-          console.error('❌ Subscription update failed:', subscriptionError)
-          return NextResponse.json(
-            { error: 'Failed to update subscription' },
-            { status: 400 }
-          )
-        }
-
-        console.log('✅ Subscription updated successfully')
-        break
-
-      case 'customer.subscription.deleted':
-        const canceledSubscription = event.data.object as Stripe.Subscription
-        const canceledUserId = canceledSubscription.metadata.userId
-
-        // Handle subscription cancellation
-        // Updates status and sets cancellation timestamp
-        if (canceledUserId) {
-          const { error: cancelError } = await supabase
-            .from('subscriptions')
-            .update({ 
-              status: 'canceled',
-              canceled_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-            .match({ user_id: canceledUserId })
-
-          if (cancelError) {
-            console.error('❌ Subscription cancellation failed:', cancelError)
-          }
-        }
-        break
-    }
-
-    return NextResponse.json({ received: true })
-  } catch (error) {
-    // Log detailed error but return generic message
-    // This prevents sensitive information leakage
-    console.error('Webhook error:', error instanceof Error ? error.message : 'Unknown error')
+    return response
+  } catch (err) {
+    console.error('Webhook error:', err instanceof Error ? err.message : 'Unknown error')
     return NextResponse.json(
       { error: 'Webhook Error' },
       { status: 400 }
     )
+  }
+}
+
+// Async handler for event processing
+async function handleWebhookEvent(event: Stripe.Event) {
+  switch (event.type) {
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated': {
+      const subscription = event.data.object as Stripe.Subscription
+      const userId = subscription.metadata.userId
+
+      if (!userId) {
+        console.error('No user ID found in webhook')
+        return
+      }
+
+      await supabase
+        .from('subscriptions')
+        .upsert({
+          user_id: userId,
+          stripe_subscription_id: subscription.id,
+          stripe_customer_id: subscription.customer as string,
+          status: subscription.status,
+          price_id: subscription.items.data[0].price.id,
+          current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+          current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+          cancel_at_period_end: subscription.cancel_at_period_end,
+          canceled_at: subscription.canceled_at 
+            ? new Date(subscription.canceled_at * 1000).toISOString() 
+            : null,
+          cancel_at: subscription.cancel_at 
+            ? new Date(subscription.cancel_at * 1000).toISOString() 
+            : null,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'user_id'
+        })
+      break
+    }
+    case 'customer.subscription.deleted': {
+      const canceledSubscription = event.data.object as Stripe.Subscription
+      const canceledUserId = canceledSubscription.metadata.userId
+
+      if (canceledUserId) {
+        await supabase
+          .from('subscriptions')
+          .update({ 
+            status: 'canceled',
+            canceled_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .match({ user_id: canceledUserId })
+      }
+      break
+    }
   }
 }
