@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 /**
  * Stripe Webhook Handler
@@ -21,10 +21,22 @@ import { supabase } from '@/lib/supabase'
 // This tells Next.js to use the Edge runtime for this route
 export const runtime = 'edge'
 
-// Initialize Stripe with version lock for API stability
+// Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-09-30.acacia',
+  apiVersion: '2024-09-30.acacia'
 })
+
+// Initialize Supabase with direct credentials
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // Important: Use service role key for webhook
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+)
 
 /**
  * Webhook Event Handler
@@ -45,102 +57,98 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event
 
   try {
-    event = await stripe.webhooks.constructEventAsync(
+    // Log raw webhook data
+    console.log('Raw webhook body:', body)
+    console.log('Stripe signature:', sig)
+
+    event = stripe.webhooks.constructEvent(
       body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
-  } catch (err: any) {
-    console.error('🚨 Webhook signature verification failed:', err.message)
-    return NextResponse.json(
-      { error: `Webhook Error: ${err.message}` },
-      { status: 400 }
-    )
-  }
 
-  try {
+    console.log('Webhook event type:', event.type)
+    console.log('Full event data:', JSON.stringify(event, null, 2))
+
     switch (event.type) {
-      case 'customer.subscription.created':
       case 'customer.subscription.updated':
         const subscription = event.data.object as Stripe.Subscription
         const userId = subscription.metadata.userId
 
-        if (!userId) {
-          console.error('No user ID found in webhook')
-          return NextResponse.json(
-            { error: 'No user ID found' },
-            { status: 400 }
-          )
-        }
+        console.log('Processing subscription update:', {
+          userId,
+          subscriptionId: subscription.id,
+          status: subscription.status,
+          cancel_at_period_end: subscription.cancel_at_period_end,
+          canceled_at: subscription.canceled_at,
+          cancel_at: subscription.cancel_at
+        })
 
-        console.log('Processing subscription for user:', userId)
-
-        const { error: subscriptionError } = await supabase
-          .from('subscriptions')
-          .upsert({
-            user_id: userId,
+        if (userId) {
+          const updateData = {
             stripe_subscription_id: subscription.id,
             stripe_customer_id: subscription.customer as string,
             status: subscription.status,
             price_id: subscription.items.data[0].price.id,
             current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
             current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-          })
-
-        if (subscriptionError) {
-          console.error('❌ Subscription update failed:', subscriptionError)
-          return NextResponse.json(
-            { error: 'Failed to update subscription' },
-            { status: 400 }
-          )
-        }
-
-        console.log('✅ Subscription updated successfully')
-        break
-
-      case 'customer.subscription.deleted':
-        const canceledSubscription = event.data.object as Stripe.Subscription
-        const canceledUserId = canceledSubscription.metadata.userId
-
-        if (canceledUserId) {
-          const { error: cancelError } = await supabase
-            .from('subscriptions')
-            .update({ status: 'canceled' })
-            .match({ user_id: canceledUserId })
-
-          if (cancelError) {
-            console.error('❌ Subscription cancellation failed:', cancelError)
+            updated_at: new Date().toISOString(),
+            cancel_at_period_end: subscription.cancel_at_period_end,
+            canceled_at: subscription.canceled_at 
+              ? new Date(subscription.canceled_at * 1000).toISOString() 
+              : null,
+            cancel_at: subscription.cancel_at 
+              ? new Date(subscription.cancel_at * 1000).toISOString() 
+              : null
           }
-        }
-        break
 
-      case 'customer.subscription.updated':
-        const updatedSubscription = event.data.object as Stripe.Subscription
-        const updatedUserId = updatedSubscription.metadata.userId
+          console.log('Attempting Supabase update with:', updateData)
 
-        if (updatedUserId) {
+          // First, verify the subscription exists
+          const { data: existingSub, error: fetchError } = await supabase
+            .from('subscriptions')
+            .select('*')
+            .eq('user_id', userId)
+            .single()
+
+          if (fetchError) {
+            console.error('Error fetching existing subscription:', fetchError)
+            return NextResponse.json({ error: fetchError.message }, { status: 500 })
+          }
+
+          console.log('Existing subscription in Supabase:', existingSub)
+
           const { error: updateError } = await supabase
             .from('subscriptions')
-            .update({
-              status: updatedSubscription.status,
-              current_period_start: new Date(updatedSubscription.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(updatedSubscription.current_period_end * 1000).toISOString(),
-            })
-            .match({ user_id: updatedUserId })
+            .update(updateData)
+            .eq('user_id', userId)
 
           if (updateError) {
-            console.error('❌ Subscription update failed:', updateError)
+            console.error('Supabase update error:', updateError)
+            return NextResponse.json(
+              { error: updateError.message },
+              { status: 500 }
+            )
           }
+
+          // Verify the update
+          const { data: updatedSub, error: verifyError } = await supabase
+            .from('subscriptions')
+            .select('*')
+            .eq('user_id', userId)
+            .single()
+
+          console.log('Updated subscription in database:', updatedSub)
         }
         break
     }
 
     return NextResponse.json({ received: true })
   } catch (error) {
-    console.error('Webhook processing error:', error)
+    console.error('Webhook error:', error)
     return NextResponse.json(
-      { error: 'Webhook processing failed' },
-      { status: 500 }
+      { error: 'Webhook error' },
+      { status: 400 }
     )
   }
 }
