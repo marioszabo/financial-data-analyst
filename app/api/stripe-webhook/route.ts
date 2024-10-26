@@ -48,8 +48,13 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 export async function POST(req: NextRequest) {
   try {
     // Get raw body for signature verification
-    // Important: Must use raw body to verify signature
     const rawBody = await req.text()
+    
+    // Debug logging
+    console.log('Webhook received:', {
+      headers: Object.fromEntries(req.headers),
+      bodyPreview: rawBody.substring(0, 100) // Log first 100 chars only
+    })
     
     // Get Stripe signature from headers
     // This is used to verify the webhook came from Stripe
@@ -103,9 +108,17 @@ export async function POST(req: NextRequest) {
           subscriptionId: subscription.id
         })
 
+        // Log upsert attempt
+        console.log('Attempting database upsert:', {
+          userId: userId,
+          subscriptionId: subscription.id,
+          customerId: subscription.customer,
+          status: subscription.status
+        })
+
         // Upsert subscription data
         // Uses onConflict to handle potential duplicate events
-        const { error: subscriptionError } = await supabase
+        const { data, error: subscriptionError } = await supabase
           .from('subscriptions')
           .upsert({
             user_id: userId,
@@ -127,6 +140,17 @@ export async function POST(req: NextRequest) {
           }, {
             onConflict: 'user_id' // Update existing subscription if found
           })
+
+        // Log upsert result
+        if (subscriptionError) {
+          console.error('Database upsert failed:', {
+            error: subscriptionError,
+            errorMessage: subscriptionError.message,
+            details: subscriptionError.details
+          })
+        } else {
+          console.log('Database upsert successful:', { data })
+        }
 
         if (subscriptionError) {
           console.error('❌ Subscription update failed:', subscriptionError)
