@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     console.log('Webhook details:', {
       hasSignature: !!sig,
       bodyLength: body.length,
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.slice(0, 10) + '...' // Log partial secret for verification
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.slice(0, 10) + '...'
     })
 
     if (!sig) {
@@ -58,7 +58,8 @@ export async function POST(req: NextRequest) {
     let event: Stripe.Event
     
     try {
-      event = stripe.webhooks.constructEvent(
+      // Changed to constructEventAsync
+      event = await stripe.webhooks.constructEventAsync(
         body,
         sig,
         process.env.STRIPE_WEBHOOK_SECRET!
