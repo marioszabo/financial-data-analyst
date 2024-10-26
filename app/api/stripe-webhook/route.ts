@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
 /**
  * Stripe Webhook Handler
@@ -44,9 +45,9 @@ const supabase = createClient(
  * Processes Stripe subscription events and syncs with Supabase.
  * Currently handles:
  * - customer.subscription.created
+ * - customer.subscription.updated
  * 
  * Future events to consider:
- * - customer.subscription.updated
  * - customer.subscription.deleted
  * - payment_intent.succeeded
  */
@@ -57,41 +58,38 @@ export async function POST(req: NextRequest) {
   let event: Stripe.Event
 
   try {
-    // Log raw webhook data
-    console.log('Raw webhook body:', body)
-    console.log('Stripe signature:', sig)
-
     event = stripe.webhooks.constructEvent(
       body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
-    console.log('Webhook event type:', event.type)
-    console.log('Full event data:', JSON.stringify(event, null, 2))
+    console.log('Processing webhook event:', event.type)
 
     switch (event.type) {
+      case 'customer.subscription.created':
       case 'customer.subscription.updated':
         const subscription = event.data.object as Stripe.Subscription
         const userId = subscription.metadata.userId
 
-        console.log('Processing subscription update:', {
+        console.log('Processing subscription:', {
+          eventType: event.type,
           userId,
           subscriptionId: subscription.id,
-          status: subscription.status,
-          cancel_at_period_end: subscription.cancel_at_period_end,
-          canceled_at: subscription.canceled_at,
-          cancel_at: subscription.cancel_at
+          status: subscription.status
         })
 
         if (userId) {
-          const updateData = {
+          const subscriptionData = {
+            id: crypto.randomUUID(), // Only for new subscriptions
+            user_id: userId,
             stripe_subscription_id: subscription.id,
             stripe_customer_id: subscription.customer as string,
             status: subscription.status,
             price_id: subscription.items.data[0].price.id,
             current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
             current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             cancel_at_period_end: subscription.cancel_at_period_end,
             canceled_at: subscription.canceled_at 
@@ -102,43 +100,50 @@ export async function POST(req: NextRequest) {
               : null
           }
 
-          console.log('Attempting Supabase update with:', updateData)
-
-          // First, verify the subscription exists
+          // Check if subscription exists
           const { data: existingSub, error: fetchError } = await supabase
             .from('subscriptions')
-            .select('*')
+            .select('id')
             .eq('user_id', userId)
             .single()
 
-          if (fetchError) {
-            console.error('Error fetching existing subscription:', fetchError)
+          if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found"
+            console.error('Error checking existing subscription:', fetchError)
             return NextResponse.json({ error: fetchError.message }, { status: 500 })
           }
 
-          console.log('Existing subscription in Supabase:', existingSub)
+          let error
+          if (existingSub) {
+            // Update existing subscription
+            const { error: updateError } = await supabase
+              .from('subscriptions')
+              .update(subscriptionData)
+              .eq('user_id', userId)
+            error = updateError
+          } else {
+            // Insert new subscription
+            const { error: insertError } = await supabase
+              .from('subscriptions')
+              .insert([subscriptionData])
+            error = insertError
+          }
 
-          const { error: updateError } = await supabase
-            .from('subscriptions')
-            .update(updateData)
-            .eq('user_id', userId)
-
-          if (updateError) {
-            console.error('Supabase update error:', updateError)
+          if (error) {
+            console.error('Supabase operation error:', error)
             return NextResponse.json(
-              { error: updateError.message },
+              { error: error.message },
               { status: 500 }
             )
           }
 
-          // Verify the update
-          const { data: updatedSub, error: verifyError } = await supabase
+          // Verify the operation
+          const { data: verifiedSub, error: verifyError } = await supabase
             .from('subscriptions')
             .select('*')
             .eq('user_id', userId)
             .single()
 
-          console.log('Updated subscription in database:', updatedSub)
+          console.log('Subscription in database:', verifiedSub)
         }
         break
     }
