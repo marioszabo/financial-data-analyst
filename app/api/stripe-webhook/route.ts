@@ -49,46 +49,62 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.text()
-    const signature = headers().get('stripe-signature')
+    // Get the raw request body as a string
+    const rawBody = await req.text()
+    
+    // Get the Stripe signature from headers
+    const stripeSignature = headers().get('stripe-signature')
 
     // Debug logging
     console.log('Webhook request details:', {
-      hasSignature: !!signature,
-      signatureValue: signature?.substring(0, 20) + '...',
-      bodyLength: body.length,
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.substring(0, 8) + '...'
+      hasSignature: !!stripeSignature,
+      signatureFormat: stripeSignature?.split(',').length + ' parts',
+      rawBodyPreview: rawBody.substring(0, 50) + '...',
+      contentType: headers().get('content-type')
     })
 
-    if (!signature) {
-      throw new Error('No stripe signature found')
+    if (!stripeSignature) {
+      throw new Error('Missing stripe-signature header')
     }
 
-    const event = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    )
+    try {
+      // Verify the signature using the raw body string
+      const event = stripe.webhooks.constructEvent(
+        rawBody,
+        stripeSignature,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      )
 
-    // Debug logging
-    console.log('Webhook event received:', {
-      type: event.type,
-      id: event.id
-    })
+      console.log('Webhook verified successfully:', {
+        type: event.type,
+        id: event.id
+      })
 
-    // Return 200 immediately after verification
-    const response = NextResponse.json({ received: true })
+      // Return 200 immediately after verification
+      const response = NextResponse.json({ received: true })
 
-    // Process the event asynchronously
-    handleWebhookEvent(event).catch(error => {
-      console.error('Async webhook processing error:', error)
-    })
+      // Process the event asynchronously
+      handleWebhookEvent(event).catch(error => {
+        console.error('Async webhook processing error:', error)
+      })
 
-    return response
+      return response
+
+    } catch (err) {
+      console.error('Signature verification failed:', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+        secretPrefix: process.env.STRIPE_WEBHOOK_SECRET?.substring(0, 7), // Just log 'whsec_' prefix
+        signatureStart: stripeSignature.substring(0, 20)
+      })
+      return NextResponse.json(
+        { error: 'Signature verification failed' },
+        { status: 400 }
+      )
+    }
   } catch (err) {
-    console.error('Webhook error:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('Webhook processing error:', err instanceof Error ? err.message : 'Unknown error')
     return NextResponse.json(
-      { error: 'Webhook Error' },
+      { error: 'Webhook processing failed' },
       { status: 400 }
     )
   }
