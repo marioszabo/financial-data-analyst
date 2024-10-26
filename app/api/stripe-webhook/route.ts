@@ -28,7 +28,7 @@ import { headers } from 'next/headers'
 // Route Segment Configuration - this replaces the old config export
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 60 // 5 minutes timeout for webhook processing
+export const maxDuration = 60  // Changed from 300 to 60 to comply with Vercel hobby plan limits
 
 // Initialize Stripe with version lock for API stability
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -52,27 +52,37 @@ export async function POST(req: NextRequest) {
     const body = await req.text()
     const signature = headers().get('stripe-signature')
 
+    // Debug logging
+    console.log('Webhook request details:', {
+      hasSignature: !!signature,
+      signatureValue: signature?.substring(0, 20) + '...',
+      bodyLength: body.length,
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET?.substring(0, 8) + '...'
+    })
+
     if (!signature) {
-      console.error('No stripe signature found')
-      return NextResponse.json(
-        { error: 'No signature found' },
-        { status: 400 }
-      )
+      throw new Error('No stripe signature found')
     }
 
-    // Verify the event
     const event = stripe.webhooks.constructEvent(
       body,
       signature,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
+    // Debug logging
+    console.log('Webhook event received:', {
+      type: event.type,
+      id: event.id
+    })
+
     // Return 200 immediately after verification
-    // This follows Stripe's best practice of quick response
     const response = NextResponse.json({ received: true })
 
     // Process the event asynchronously
-    handleWebhookEvent(event).catch(console.error)
+    handleWebhookEvent(event).catch(error => {
+      console.error('Async webhook processing error:', error)
+    })
 
     return response
   } catch (err) {
@@ -90,10 +100,19 @@ async function handleWebhookEvent(event: Stripe.Event) {
     case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       const subscription = event.data.object as Stripe.Subscription
-      const userId = subscription.metadata.userId
+      
+      // Debug logging
+      console.log('Processing subscription:', {
+        id: subscription.id,
+        customer: subscription.customer,
+        metadata: subscription.metadata
+      })
+
+      // For test events, use the customer ID if userId is not in metadata
+      const userId = subscription.metadata.userId || subscription.customer
 
       if (!userId) {
-        console.error('No user ID found in webhook')
+        console.error('No user ID or customer ID found in webhook')
         return
       }
 
@@ -118,6 +137,8 @@ async function handleWebhookEvent(event: Stripe.Event) {
         }, {
           onConflict: 'user_id'
         })
+
+      console.log('Subscription processed successfully:', subscription.id)
       break
     }
     case 'customer.subscription.deleted': {
