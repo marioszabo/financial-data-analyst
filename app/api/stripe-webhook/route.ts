@@ -34,7 +34,19 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-09-30.acacia'
 })
 
-const processedEvents = new Set<string>()
+// Buffer helper for App Router
+async function buffer(req: NextRequest) {
+  const chunks: Uint8Array[] = []
+  const reader = req.body!.getReader()
+  
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+  }
+  
+  return Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))
+}
 
 /**
  * Webhook Event Handler
@@ -50,100 +62,78 @@ const processedEvents = new Set<string>()
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    // Get the raw body as a buffer first
-    const rawBody = await req.clone().arrayBuffer()
-    const rawBodyString = Buffer.from(rawBody).toString('utf8')
+    const rawBody = await buffer(req)
     const signature = headers().get('stripe-signature')
 
-    console.log('Webhook request details:', {
-      timestamp: new Date().toISOString(),
-      hasSignature: !!signature,
-      signatureStart: signature?.substring(0, 30),
-      bodyLength: rawBodyString.length,
-      bodyPreview: rawBodyString.substring(0, 50).replace(/\n/g, '\\n')
-    })
-
     if (!signature || !process.env.STRIPE_WEBHOOK_SECRET) {
-      throw new Error('Missing signature or webhook secret')
+      console.error('Missing signature or webhook secret')
+      return NextResponse.json(
+        { error: 'Missing signature or webhook secret' },
+        { status: 400 }
+      )
     }
 
+    let event: Stripe.Event
+
     try {
-      const event = stripe.webhooks.constructEvent(
-        rawBodyString,
+      event = stripe.webhooks.constructEvent(
+        rawBody,
         signature,
         process.env.STRIPE_WEBHOOK_SECRET
       )
 
-      // Check for duplicate events
-      const eventKey = `${event.type}:${event.id}`
-      if (processedEvents.has(eventKey)) {
-        console.log(`Duplicate event detected: ${eventKey}`)
-        return NextResponse.json({ received: true })
-      }
-      processedEvents.add(eventKey)
-
-      console.log('Event verified successfully:', {
+      // Log successful verification
+      console.log('✅ Success:', {
+        eventId: event.id,
         type: event.type,
-        id: event.id
+        signature: signature.substring(0, 20) + '...'
       })
-
-      // Return success quickly
-      const response = NextResponse.json({ received: true })
-
-      // Process asynchronously
-      handleWebhookEventAsync(event).catch(error => {
-        console.error('Async processing error:', error)
-      })
-
-      return response
 
     } catch (err) {
-      console.error('Webhook verification failed:', {
+      console.error('❌ Webhook signature verification failed:', {
         error: err instanceof Error ? err.message : 'Unknown error',
-        signatureStart: signature.substring(0, 30),
-        bodyStart: rawBodyString.substring(0, 50).replace(/\n/g, '\\n')
+        signature: signature.substring(0, 20) + '...'
       })
       return NextResponse.json(
-        { error: 'Verification failed' },
+        { error: 'Webhook signature verification failed' },
         { status: 400 }
       )
     }
+
+    // Handle the event
+    try {
+      switch (event.type) {
+        case 'payment_intent.succeeded': {
+          const paymentIntent = event.data.object as Stripe.PaymentIntent
+          console.log(`💰 PaymentIntent status: ${paymentIntent.status}`)
+          break
+        }
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated': {
+          const subscription = event.data.object as Stripe.Subscription
+          console.log(`📅 Subscription status: ${subscription.status}`)
+          break
+        }
+        default: {
+          console.warn(`🤷‍♀️ Unhandled event type: ${event.type}`)
+        }
+      }
+
+      // Return a response to acknowledge receipt of the event
+      return NextResponse.json({ received: true })
+
+    } catch (err) {
+      console.error('❌ Event processing error:', err)
+      return NextResponse.json(
+        { error: 'Event processing failed' },
+        { status: 500 }
+      )
+    }
   } catch (err) {
-    console.error('Processing error:', err instanceof Error ? err.message : 'Unknown error')
+    console.error('❌ Request processing error:', err)
     return NextResponse.json(
-      { error: 'Processing failed' },
+      { error: 'Request processing failed' },
       { status: 500 }
     )
-  }
-}
-
-// Async handler for event processing after response
-async function handleWebhookEventAsync(event: Stripe.Event) {
-  try {
-    switch (event.type) {
-      case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-        const subscription = event.data.object as Stripe.Subscription
-        console.log('Processing subscription:', {
-          id: subscription.id,
-          status: subscription.status,
-          customerId: subscription.customer
-        })
-        break
-
-      case 'payment_intent.succeeded':
-        const paymentIntent = event.data.object as Stripe.PaymentIntent
-        console.log('Processing payment:', {
-          id: paymentIntent.id,
-          amount: paymentIntent.amount,
-          customerId: paymentIntent.customer
-        })
-        break
-
-      default:
-        console.log(`Unhandled event type: ${event.type}`)
-    }
-  } catch (error) {
-    console.error('Event processing error:', error)
   }
 }
