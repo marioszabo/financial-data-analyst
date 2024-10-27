@@ -27,6 +27,11 @@ import { headers } from 'next/headers'
 // Route Segment Configuration - this replaces the old config export
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60  // Changed from 300 to 60 to comply with Vercel hobby plan limits
+export const config = {
+  api: {
+    bodyParser: false // Disable body parsing
+  }
+}
 
 // Initialize Stripe with version lock for API stability
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -49,38 +54,72 @@ const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.text()
+    // Get raw body as a Uint8Array
+    const chunks = []
+    const reader = req.body!.getReader()
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+    }
+    
+    // Combine chunks and convert to string
+    const rawBody = Buffer.concat(chunks.map(chunk => Buffer.from(chunk))).toString('utf8')
+    
     const signature = headers().get('stripe-signature')
+    const headersList = headers()
 
-    // Enhanced logging
-    console.log('Webhook details:', {
-      hasBody: !!body,
-      bodyLength: body?.length,
-      hasSignature: !!signature,
-      signatureStart: signature?.substring(0, 30),
-      webhookSecretPrefix: webhookSecret.substring(0, 7),
-      timestamp: new Date().toISOString()
+    // Debug logging
+    console.log('Request details:', {
+      timestamp: new Date().toISOString(),
+      headers: {
+        'content-type': headersList.get('content-type'),
+        'stripe-signature': signature?.substring(0, 20) + '...',
+      },
+      bodyLength: rawBody.length,
+      bodyStart: rawBody.substring(0, 50).replace(/\n/g, '\\n'),
+      secretPrefix: webhookSecret.substring(0, 7)
     })
 
     if (!signature) {
-      console.error('No signature found')
-      return NextResponse.json({ error: 'No signature' }, { status: 400 })
+      throw new Error('No stripe-signature header found')
     }
 
     try {
       const event = stripe.webhooks.constructEvent(
-        body,
+        rawBody,
         signature,
         webhookSecret
       )
 
-      console.log('Webhook verified:', {
+      console.log('Event verified:', {
         type: event.type,
         id: event.id,
-        customerId: 'customer' in event.data.object ? event.data.object.customer : null
+        object: event.data.object.object
       })
 
-      // Return success immediately
+      // Handle the event
+      switch (event.type) {
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+          const subscription = event.data.object as Stripe.Subscription
+          console.log('Processing subscription:', {
+            id: subscription.id,
+            status: subscription.status,
+            customerId: subscription.customer
+          })
+          break
+        case 'payment_intent.succeeded':
+          const paymentIntent = event.data.object as Stripe.PaymentIntent
+          console.log('Processing payment:', {
+            id: paymentIntent.id,
+            amount: paymentIntent.amount,
+            customerId: paymentIntent.customer
+          })
+          break
+      }
+
       return NextResponse.json({ 
         success: true,
         event: event.type,
@@ -91,13 +130,19 @@ export async function POST(req: NextRequest) {
       console.error('Verification failed:', {
         error: err instanceof Error ? err.message : 'Unknown error',
         signatureStart: signature.substring(0, 30),
-        bodyStart: body.substring(0, 50)
+        bodyStart: rawBody.substring(0, 50).replace(/\n/g, '\\n')
       })
-      return NextResponse.json({ error: 'Verification failed' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Verification failed' },
+        { status: 400 }
+      )
     }
 
   } catch (err) {
     console.error('Processing error:', err instanceof Error ? err.message : 'Unknown error')
-    return NextResponse.json({ error: 'Processing failed' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Processing failed' },
+      { status: 500 }
+    )
   }
 }
