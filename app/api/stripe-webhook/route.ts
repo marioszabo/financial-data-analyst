@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { stripe } from '@/lib/stripe'
 
-// Configure as Edge Function
-export const config = {
-  runtime: 'edge',
-  regions: ['iad1'], // Keep webhook handler in one region
-}
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-09-30.acacia'
-})
+// New config format for Next.js 14
+export const runtime = 'edge'
+export const preferredRegion = ['iad1'] // US East (N. Virginia)
 
 // Forward webhook to microservice
 async function forwardToService(payload: string, signature: string) {
@@ -29,31 +24,48 @@ export async function POST(req: NextRequest) {
     const sig = req.headers.get('stripe-signature')
 
     if (!sig) {
-      return NextResponse.json({ error: 'No signature' }, { status: 400 })
-    }
-
-    // Try local processing first
-    try {
-      const event = stripe.webhooks.constructEvent(
-        payload,
-        sig,
-        process.env.STRIPE_WEBHOOK_SECRET!
+      return NextResponse.json(
+        { error: 'No signature' },
+        { status: 400 }
       )
-      
-      // Process locally
-      handleWebhookEvent(event).catch(console.error)
-      
-    } catch (err) {
-      // If local processing fails, forward to microservice
-      console.log('Forwarding to microservice...')
-      await forwardToService(payload, sig)
     }
 
+    const event = stripe.webhooks.constructEvent(
+      payload,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    )
+
+    // Handle event asynchronously
+    handleWebhookEvent(event).catch(console.error)
+
+    // Return success immediately
     return NextResponse.json({ received: true })
 
   } catch (err) {
-    console.error('Webhook error:', err)
-    return NextResponse.json({ error: 'Webhook failed' }, { status: 400 })
+    console.error('Webhook error:', err instanceof Error ? err.message : 'Unknown error')
+    return NextResponse.json(
+      { error: 'Webhook failed' },
+      { status: 400 }
+    )
+  }
+}
+
+async function handleWebhookEvent(event: Stripe.Event) {
+  switch (event.type) {
+    case 'payment_intent.succeeded': {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent
+      console.log('💰 Payment successful:', paymentIntent.id)
+      break
+    }
+    case 'customer.subscription.created':
+    case 'customer.subscription.updated': {
+      const subscription = event.data.object as Stripe.Subscription
+      console.log('📅 Subscription:', subscription.status)
+      break
+    }
+    default:
+      console.log('📌 Unhandled event:', event.type)
   }
 }
 
