@@ -1,75 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { headers } from 'next/headers'
 
-// App Router config
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
-export const preferredRegion = 'auto'
+// Configure as Edge Function
+export const config = {
+  runtime: 'edge',
+  regions: ['iad1'], // Keep webhook handler in one region
+}
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-09-30.acacia'
 })
 
-// Buffer helper adapted for App Router
-async function buffer(req: NextRequest) {
-  const chunks: Uint8Array[] = []
-  const reader = req.body!.getReader()
-  
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(value)
-    }
-    return Buffer.concat(chunks.map(chunk => Buffer.from(chunk)))
-  } catch (e) {
-    console.error('Buffer reading error:', e instanceof Error ? e.message : 'Unknown error')
-    throw e
-  }
+// Forward webhook to microservice
+async function forwardToService(payload: string, signature: string) {
+  return fetch(process.env.WEBHOOK_SERVICE_URL!, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Stripe-Signature': signature,
+    },
+    body: payload,
+  })
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    // Request Body.
-    const rawBody = await request.text()
-    const body = JSON.parse(rawBody)
+    const payload = await req.text()
+    const sig = req.headers.get('stripe-signature')
 
-    let event: Stripe.Event
-
-    // Verify the webhook signature
-    try {
-      const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET
-      if (!stripeWebhookSecret) {
-        throw new Error('STRIPE_WEBHOOK_SECRET not set')
-      }
-
-      const sig = headers().get('stripe-signature')
-      if (!sig) {
-        throw new Error('Stripe Signature missing')
-      }
-
-      event = stripe.webhooks.constructEvent(rawBody, sig, stripeWebhookSecret)
-    } catch (err) {
-      console.error('⚠️  Webhook signature verification failed:', err instanceof Error ? err.message : 'Unknown error')
-      return NextResponse.json(
-        { error: 'Webhook signature verification failed' },
-        { status: 400 }
-      )
+    if (!sig) {
+      return NextResponse.json({ error: 'No signature' }, { status: 400 })
     }
 
-    const webhookResponse = await handleStripeWebhook(event)
-    
-    return NextResponse.json(
-      webhookResponse?.body || { received: true },
-      { status: webhookResponse?.status || 200 }
-    )
-  } catch (error) {
-    console.error('Error in Stripe webhook handler:', error)
-    return NextResponse.json(
-      { error: 'Webhook handler failed.' },
-      { status: 500 }
-    )
+    // Try local processing first
+    try {
+      const event = stripe.webhooks.constructEvent(
+        payload,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      )
+      
+      // Process locally
+      handleWebhookEvent(event).catch(console.error)
+      
+    } catch (err) {
+      // If local processing fails, forward to microservice
+      console.log('Forwarding to microservice...')
+      await forwardToService(payload, sig)
+    }
+
+    return NextResponse.json({ received: true })
+
+  } catch (err) {
+    console.error('Webhook error:', err)
+    return NextResponse.json({ error: 'Webhook failed' }, { status: 400 })
   }
 }
 
