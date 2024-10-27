@@ -33,6 +33,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-09-30.acacia'
 })
 
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
+
 /**
  * Webhook Event Handler
  * 
@@ -50,50 +52,52 @@ export async function POST(req: NextRequest) {
     const body = await req.text()
     const signature = headers().get('stripe-signature')
 
-    // Debug logging
-    console.log('Webhook received:', {
+    // Enhanced logging
+    console.log('Webhook details:', {
       hasBody: !!body,
       bodyLength: body?.length,
       hasSignature: !!signature,
+      signatureStart: signature?.substring(0, 30),
+      webhookSecretPrefix: webhookSecret.substring(0, 7),
       timestamp: new Date().toISOString()
     })
 
-    // Always return 200 first
-    const response = NextResponse.json(
-      { received: true },
-      { status: 200 }
-    )
-
-    // Only try to verify and process if we have both body and signature
-    if (body && signature) {
-      try {
-        const event = stripe.webhooks.constructEvent(
-          body,
-          signature,
-          process.env.STRIPE_WEBHOOK_SECRET!
-        )
-
-        console.log('Webhook verified:', {
-          type: event.type,
-          id: event.id
-        })
-
-      } catch (err) {
-        // Log error but don't fail the request
-        console.error('Verification failed:', {
-          error: err instanceof Error ? err.message : 'Unknown error'
-        })
-      }
+    if (!signature) {
+      console.error('No signature found')
+      return NextResponse.json({ error: 'No signature' }, { status: 400 })
     }
 
-    return response
+    try {
+      const event = stripe.webhooks.constructEvent(
+        body,
+        signature,
+        webhookSecret
+      )
+
+      console.log('Webhook verified:', {
+        type: event.type,
+        id: event.id,
+        customerId: 'customer' in event.data.object ? event.data.object.customer : null
+      })
+
+      // Return success immediately
+      return NextResponse.json({ 
+        success: true,
+        event: event.type,
+        id: event.id
+      })
+
+    } catch (err) {
+      console.error('Verification failed:', {
+        error: err instanceof Error ? err.message : 'Unknown error',
+        signatureStart: signature.substring(0, 30),
+        bodyStart: body.substring(0, 50)
+      })
+      return NextResponse.json({ error: 'Verification failed' }, { status: 400 })
+    }
 
   } catch (err) {
-    // Log error but still return 200
-    console.error('Webhook error:', err instanceof Error ? err.message : 'Unknown error')
-    return NextResponse.json(
-      { received: true },
-      { status: 200 }
-    )
+    console.error('Processing error:', err instanceof Error ? err.message : 'Unknown error')
+    return NextResponse.json({ error: 'Processing failed' }, { status: 500 })
   }
 }
