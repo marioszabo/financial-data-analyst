@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
-import { supabase } from '@/lib/supabase-server'
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { Database } from '@/types/supabase'
 
 // New config format for Next.js 14
 export const runtime = 'edge'
@@ -53,6 +55,8 @@ export async function POST(req: NextRequest) {
 }
 
 async function handleWebhookEvent(event: Stripe.Event) {
+  const supabase = createServerComponentClient<Database>({ cookies })
+  
   switch (event.type) {
     case 'payment_intent.succeeded': {
       const paymentIntent = event.data.object as Stripe.PaymentIntent
@@ -69,11 +73,19 @@ async function handleWebhookEvent(event: Stripe.Event) {
           .upsert({
             user_id: userId,
             stripe_customer_id: subscription.customer as string,
+            stripe_subscription_id: subscription.id,
             status: subscription.status,
             price_id: subscription.items.data[0].price.id,
             current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
             current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
             cancel_at_period_end: subscription.cancel_at_period_end,
+            updated_at: new Date().toISOString(),
+            cancel_at: subscription.cancel_at 
+              ? new Date(subscription.cancel_at * 1000).toISOString() 
+              : null,
+            canceled_at: subscription.canceled_at 
+              ? new Date(subscription.canceled_at * 1000).toISOString() 
+              : null,
           })
 
         if (createError) {
@@ -135,11 +147,15 @@ async function handleWebhookEvent(event: Stripe.Event) {
         .single()
 
       if (subData?.user_id) {
+        const paymentIntent = typeof invoice.payment_intent === 'string' 
+          ? await stripe.paymentIntents.retrieve(invoice.payment_intent)
+          : invoice.payment_intent
+
         const { error: updateError } = await supabase
           .from('subscriptions')
           .update({
             status: 'past_due',
-            last_payment_error: invoice.last_payment_error?.message,
+            payment_error: paymentIntent?.last_payment_error?.message,
           })
           .match({ user_id: subData.user_id })
 

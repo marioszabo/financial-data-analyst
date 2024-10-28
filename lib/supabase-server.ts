@@ -1,5 +1,6 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
+import { Database } from '@/types/supabase'
 
 /**
  * Supabase Client Factory for Server Components
@@ -27,18 +28,10 @@ export const createClient = () => {
   const cookieStore = cookies()
   
   // Create client with server-specific cookie handling
-  return createServerComponentClient({ 
-    cookies: () => cookieStore,
-    options: {
-      db: {
-        schema: 'public'
-      },
-      auth: {
-        persistSession: false // Recommended for edge runtime
-      }
-    }
+  return createServerComponentClient<Database>({
+    cookies: () => cookieStore
   })
 }
 
-// Add this export to use a singleton instance
+// Singleton instance for consistent usage
 export const supabase = createClient()

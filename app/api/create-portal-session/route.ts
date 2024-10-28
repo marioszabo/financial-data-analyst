@@ -1,6 +1,8 @@
-import { createClient } from '@/lib/supabase-server'
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { Database } from '@/types/supabase'
 
 /**
  * Stripe Customer Portal Session Handler
@@ -32,9 +34,11 @@ export async function POST(req: Request) {
   try {
     const { userId } = await req.json()
     
+    // Create Supabase client within request context
+    const supabase = createServerComponentClient<Database>({ cookies })
+    
     // Query Supabase for existing subscription
     // This verifies the user has an active subscription before creating portal session
-    const supabase = createClient()
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('stripe_customer_id')

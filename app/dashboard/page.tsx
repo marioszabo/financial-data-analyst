@@ -165,17 +165,18 @@ export default function DashboardPage() {
         throw new Error(await response.text())
       }
 
-      const { sessionId, error } = await response.json()
-      if (error) throw new Error(error)
+      const { sessionId, checkoutError } = await response.json()
+      if (checkoutError) throw new Error(checkoutError)
       
       const stripe = await stripePromise
       if (!stripe) throw new Error('Stripe failed to initialize')
 
       // Redirect to Stripe's hosted checkout
-      const { error } = await stripe.redirectToCheckout({ sessionId })
-      if (error) throw error
-    } catch (error) {
-      console.error('Subscription error:', error)
+      const { error: redirectError } = await stripe.redirectToCheckout({ sessionId })
+      if (redirectError) throw redirectError
+      
+    } catch (err) {
+      console.error('Subscription error:', err)
     } finally {
       setIsProcessing(false)
     }
