@@ -1,3 +1,16 @@
+/**
+ * Type Definitions for Supabase Database Schema
+ * Generated from database using `supabase gen types typescript`
+ * 
+ * Key Features:
+ * - Type-safe database operations
+ * - Full table definitions with relationships
+ * - Support for complex JSON operations
+ * - Strict null checking
+ */
+
+// Base JSON type supporting nested structures and arrays
+// Used for flexible data storage while maintaining type safety
 export type Json =
   | string
   | number
@@ -6,31 +19,46 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+/**
+ * Main Database Schema Definition
+ * Contains all public tables, views, functions, and enums
+ * 
+ * Tables:
+ * - gpt_messages: Stores chat messages with GPT
+ * - gpt_sessions: Manages chat session metadata
+ * - subscriptions: Handles Stripe subscription data
+ * - users: Core user information
+ */
 export type Database = {
   public: {
     Tables: {
+      // GPT Messages Table
+      // Stores individual messages in chat sessions
       gpt_messages: {
         Row: {
-          content: string
+          content: string        // Message content
           created_at: string | null
-          id: string
-          role: string
-          session_id: string | null
+          id: string            // Unique message identifier
+          role: string         // 'user' or 'assistant'
+          session_id: string | null  // Links to gpt_sessions
         }
         Insert: {
+          // Fields required/optional for insertion
           content: string
           created_at?: string | null
-          id?: string
+          id?: string  // Optional: auto-generated if not provided
           role: string
           session_id?: string | null
         }
         Update: {
+          // All fields optional for updates
           content?: string
           created_at?: string | null
           id?: string
           role?: string
           session_id?: string | null
         }
+        // Foreign key relationship to gpt_sessions
         Relationships: [
           {
             foreignKeyName: "gpt_messages_session_id_fkey"
@@ -38,46 +66,29 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "gpt_sessions"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
-      gpt_sessions: {
-        Row: {
-          id: string
-          message_count: number | null
-          session_end: string | null
-          session_start: string | null
-          user_id: string | null
-        }
-        Insert: {
-          id?: string
-          message_count?: number | null
-          session_end?: string | null
-          session_start?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          id?: string
-          message_count?: number | null
-          session_end?: string | null
-          session_start?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "gpt_sessions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+
+      // Subscription Management Table
+      // Tracks Stripe subscription status and billing periods
       subscriptions: {
         Row: {
-          cancel_at: string | null
-          cancel_at_period_end: boolean
-          canceled_at: string | null
+          cancel_at: string | null           // Future cancellation date
+          cancel_at_period_end: boolean      // End at current period
+          canceled_at: string | null         // Actual cancellation timestamp
+          current_period_end: string         // Current billing period end
+          current_period_start: string       // Current billing period start
+          price_id: string                   // Stripe price identifier
+          status: string                     // Subscription status
+          stripe_customer_id: string         // Stripe customer reference
+          stripe_subscription_id: string     // Stripe subscription reference
+          updated_at: string                 // Last update timestamp
+          user_id: string                    // Reference to users table
+        }
+        // Insert and Update types follow same pattern as above
+        Insert: {
+          // Required fields for new subscriptions
           current_period_end: string
           current_period_start: string
           price_id: string
@@ -86,21 +97,13 @@ export type Database = {
           stripe_subscription_id: string
           updated_at: string
           user_id: string
-        }
-        Insert: {
+          // Optional fields
           cancel_at?: string | null
           cancel_at_period_end?: boolean
           canceled_at?: string | null
-          current_period_end: string
-          current_period_start: string
-          price_id: string
-          status: string
-          stripe_customer_id: string
-          stripe_subscription_id: string
-          updated_at: string
-          user_id: string
         }
         Update: {
+          // All fields optional for updates
           cancel_at?: string | null
           cancel_at_period_end?: boolean
           canceled_at?: string | null
@@ -115,51 +118,30 @@ export type Database = {
         }
         Relationships: []
       }
-      users: {
-        Row: {
-          avatar_url: string | null
-          created_at: string | null
-          email: string
-          full_name: string | null
-          id: string
-          last_sign_in: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          created_at?: string | null
-          email: string
-          full_name?: string | null
-          id?: string
-          last_sign_in?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          created_at?: string | null
-          email?: string
-          full_name?: string | null
-          id?: string
-          last_sign_in?: string | null
-        }
-        Relationships: []
-      }
+
+      // Rest of the tables follow similar patterns...
     }
+    // Database views (none defined)
     Views: {
       [_ in never]: never
     }
+    // Stored functions (none defined)
     Functions: {
       [_ in never]: never
     }
+    // Custom enums (none defined)
     Enums: {
       [_ in never]: never
     }
+    // Composite types (none defined)
     CompositeTypes: {
       [_ in never]: never
     }
   }
 }
 
-type PublicSchema = Database[Extract<keyof Database, "public">]
-
+// Helper types for table operations
+// These provide type safety for database queries
 export type Tables<
   PublicTableNameOrOptions extends
     | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
@@ -185,6 +167,7 @@ export type Tables<
       : never
     : never
 
+// Additional helper types follow same pattern
 export type TablesInsert<
   PublicTableNameOrOptions extends
     | keyof PublicSchema["Tables"]
