@@ -20,13 +20,23 @@ import { cookies } from 'next/headers'
  * 
  * @returns A configured Supabase client for server-side operations
  */
+export const runtime = 'edge'
+
 export const createClient = () => {
   // Access cookies from Next.js server context
   const cookieStore = cookies()
   
   // Create client with server-specific cookie handling
   return createServerComponentClient({ 
-    cookies: () => cookieStore 
+    cookies: () => cookieStore,
+    options: {
+      db: {
+        schema: 'public'
+      },
+      auth: {
+        persistSession: false // Recommended for edge runtime
+      }
+    }
   })
 }
 

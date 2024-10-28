@@ -59,31 +59,96 @@ async function handleWebhookEvent(event: Stripe.Event) {
       console.log('💰 Payment successful:', paymentIntent.id)
       break
     }
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated': {
+    case 'customer.subscription.created': {
       const subscription = event.data.object as Stripe.Subscription
-      console.log('📅 Subscription:', subscription.status)
+      const userId = subscription.metadata.userId
+      
+      if (userId) {
+        const { error: createError } = await supabase
+          .from('subscriptions')
+          .upsert({
+            user_id: userId,
+            stripe_customer_id: subscription.customer as string,
+            status: subscription.status,
+            price_id: subscription.items.data[0].price.id,
+            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+            cancel_at_period_end: subscription.cancel_at_period_end,
+          })
+
+        if (createError) {
+          console.error('❌ Subscription creation failed:', createError)
+        }
+      }
       break
     }
-    case 'customer.subscription.updated':
-      const updatedSubscription = event.data.object as Stripe.Subscription
-      const updatedUserId = updatedSubscription.metadata.userId
+    case 'customer.subscription.updated': {
+      const subscription = event.data.object as Stripe.Subscription
+      const userId = subscription.metadata.userId
+      
+      console.log('📅 Subscription updated:', subscription.status)
 
-      if (updatedUserId) {
+      if (userId) {
         const { error: updateError } = await supabase
           .from('subscriptions')
           .update({
-            status: updatedSubscription.status,
-            current_period_start: new Date(updatedSubscription.current_period_start * 1000).toISOString(),
-            current_period_end: new Date(updatedSubscription.current_period_end * 1000).toISOString(),
+            status: subscription.status,
+            current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
           })
-          .match({ user_id: updatedUserId })
+          .match({ user_id: userId })
 
         if (updateError) {
           console.error('❌ Subscription update failed:', updateError)
         }
       }
       break
+    }
+    case 'customer.subscription.deleted': {
+      const subscription = event.data.object as Stripe.Subscription
+      const userId = subscription.metadata.userId
+      
+      if (userId) {
+        const { error: deleteError } = await supabase
+          .from('subscriptions')
+          .update({
+            status: 'canceled',
+            canceled_at: new Date().toISOString(),
+          })
+          .match({ user_id: userId })
+
+        if (deleteError) {
+          console.error('❌ Subscription deletion failed:', deleteError)
+        }
+      }
+      break
+    }
+    case 'invoice.payment_failed': {
+      const invoice = event.data.object as Stripe.Invoice
+      const subscription = invoice.subscription as string
+      const customerId = invoice.customer as string
+      
+      const { data: subData } = await supabase
+        .from('subscriptions')
+        .select('user_id')
+        .eq('stripe_customer_id', customerId)
+        .single()
+
+      if (subData?.user_id) {
+        const { error: updateError } = await supabase
+          .from('subscriptions')
+          .update({
+            status: 'past_due',
+            last_payment_error: invoice.last_payment_error?.message,
+          })
+          .match({ user_id: subData.user_id })
+
+        if (updateError) {
+          console.error('❌ Payment failure update failed:', updateError)
+        }
+      }
+      break
+    }
     default:
       console.log('📌 Unhandled event:', event.type)
   }

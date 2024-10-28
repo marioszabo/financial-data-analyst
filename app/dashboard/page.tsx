@@ -155,17 +155,19 @@ export default function DashboardPage() {
   const handleSubscribe = async () => {
     try {
       setIsProcessing(true)
-      
-      // Create checkout session with user context
       const response = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id })
       })
 
-      if (!response.ok) throw new Error('Network response was not ok')
+      if (!response.ok) {
+        throw new Error(await response.text())
+      }
 
-      const { sessionId } = await response.json()
+      const { sessionId, error } = await response.json()
+      if (error) throw new Error(error)
+      
       const stripe = await stripePromise
       if (!stripe) throw new Error('Stripe failed to initialize')
 
@@ -212,7 +214,7 @@ export default function DashboardPage() {
     }
   }
 
-  // Show loading state while fetching initial data
+  // Add skeleton loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
