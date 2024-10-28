@@ -1,30 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { stripe } from '@/lib/stripe'
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/supabase'
 
-// Configure route for edge runtime and geographic deployment
-export const runtime = 'edge'
-export const preferredRegion = ['iad1'] // US East (N. Virginia)
-
-/**
- * Forward webhook events to external microservice
- * Used for additional processing or redundancy
- * @param payload - Raw webhook event data
- * @param signature - Stripe signature for verification
- */
-async function forwardToService(payload: string, signature: string) {
-  return fetch(process.env.WEBHOOK_SERVICE_URL!, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Stripe-Signature': signature,
-    },
-    body: payload,
-  })
-}
+// Initialize Supabase client for Node.js environment
+const supabase = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 /**
  * Webhook endpoint handler for Stripe events
@@ -43,15 +27,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Use constructEventAsync instead of constructEvent for edge runtime
-    const event = await stripe.webhooks.constructEventAsync(
+    // Use standard constructEvent for Node.js runtime
+    const event = stripe.webhooks.constructEvent(
       payload,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
-    // Process event asynchronously
-    handleWebhookEvent(event).catch(console.error)
+    // Process event synchronously in Node.js environment
+    await handleWebhookEvent(event)
 
     return NextResponse.json({ received: true })
 

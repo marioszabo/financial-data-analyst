@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
-import { Moon, Sun } from "lucide-react";
+import { Moon, Sun, ArrowLeft } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,7 @@ interface TopNavBarProps {
 const TopNavBar: React.FC<TopNavBarProps> = ({ features = {} }) => {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
@@ -35,13 +37,23 @@ const TopNavBar: React.FC<TopNavBarProps> = ({ features = {} }) => {
 
   return (
     <div className="flex items-center justify-between p-4">
-      <div className="font-bold text-xl flex gap-2 items-center">
-        <Image
-          src={theme === "dark" ? "/wordmark-dark.svg" : "/wordmark.svg"}
-          alt="Company Wordmark"
-          width={112}
-          height={20}
-        />
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          onClick={() => router.push('/dashboard')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Go back to dashboard
+        </Button>
+        <div className="font-bold text-xl flex gap-2 items-center">
+          <Image
+            src={theme === "dark" ? "/wordmark-dark.svg" : "/wordmark.svg"}
+            alt="Company Wordmark"
+            width={112}
+            height={20}
+          />
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <DropdownMenu>
