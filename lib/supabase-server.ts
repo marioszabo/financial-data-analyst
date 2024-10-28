@@ -29,3 +29,6 @@ export const createClient = () => {
     cookies: () => cookieStore 
   })
 }
+
+// Add this export to use a singleton instance
+export const supabase = createClient()
