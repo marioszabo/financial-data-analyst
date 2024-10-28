@@ -5,11 +5,16 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { Database } from '@/types/supabase'
 
-// New config format for Next.js 14
+// Configure route for edge runtime and geographic deployment
 export const runtime = 'edge'
 export const preferredRegion = ['iad1'] // US East (N. Virginia)
 
-// Forward webhook to microservice
+/**
+ * Forward webhook events to external microservice
+ * Used for additional processing or redundancy
+ * @param payload - Raw webhook event data
+ * @param signature - Stripe signature for verification
+ */
 async function forwardToService(payload: string, signature: string) {
   return fetch(process.env.WEBHOOK_SERVICE_URL!, {
     method: 'POST',
@@ -21,6 +26,11 @@ async function forwardToService(payload: string, signature: string) {
   })
 }
 
+/**
+ * Webhook endpoint handler for Stripe events
+ * Verifies webhook signatures and processes various subscription events
+ * Implements async event processing to minimize webhook timeout risks
+ */
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.text()
@@ -33,16 +43,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const event = stripe.webhooks.constructEvent(
+    // Use constructEventAsync instead of constructEvent for edge runtime
+    const event = await stripe.webhooks.constructEventAsync(
       payload,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
-    // Handle event asynchronously
+    // Process event asynchronously
     handleWebhookEvent(event).catch(console.error)
 
-    // Return success immediately
     return NextResponse.json({ received: true })
 
   } catch (err) {
@@ -54,20 +64,37 @@ export async function POST(req: NextRequest) {
   }
 }
 
+/**
+ * Main webhook event processor
+ * Handles various Stripe subscription lifecycle events:
+ * - Subscription creation
+ * - Subscription updates
+ * - Subscription cancellation
+ * - Payment failures
+ * 
+ * Updates Supabase database to maintain subscription state
+ * @param event - Verified Stripe webhook event
+ */
 async function handleWebhookEvent(event: Stripe.Event) {
+  // Initialize Supabase client within request context
   const supabase = createServerComponentClient<Database>({ cookies })
   
   switch (event.type) {
     case 'payment_intent.succeeded': {
+      // Log successful payments for monitoring
       const paymentIntent = event.data.object as Stripe.PaymentIntent
       console.log('💰 Payment successful:', paymentIntent.id)
       break
     }
+
     case 'customer.subscription.created': {
+      // Handle new subscription creation
       const subscription = event.data.object as Stripe.Subscription
       const userId = subscription.metadata.userId
       
       if (userId) {
+        // Create or update subscription record in Supabase
+        // Includes all relevant subscription data and timestamps
         const { error: createError } = await supabase
           .from('subscriptions')
           .upsert({
@@ -80,6 +107,7 @@ async function handleWebhookEvent(event: Stripe.Event) {
             current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
             cancel_at_period_end: subscription.cancel_at_period_end,
             updated_at: new Date().toISOString(),
+            // Handle optional cancellation dates
             cancel_at: subscription.cancel_at 
               ? new Date(subscription.cancel_at * 1000).toISOString() 
               : null,
@@ -94,6 +122,7 @@ async function handleWebhookEvent(event: Stripe.Event) {
       }
       break
     }
+
     case 'customer.subscription.updated': {
       const subscription = event.data.object as Stripe.Subscription
       const userId = subscription.metadata.userId
@@ -116,6 +145,7 @@ async function handleWebhookEvent(event: Stripe.Event) {
       }
       break
     }
+
     case 'customer.subscription.deleted': {
       const subscription = event.data.object as Stripe.Subscription
       const userId = subscription.metadata.userId
@@ -135,6 +165,7 @@ async function handleWebhookEvent(event: Stripe.Event) {
       }
       break
     }
+
     case 'invoice.payment_failed': {
       const invoice = event.data.object as Stripe.Invoice
       const subscription = invoice.subscription as string
@@ -170,7 +201,10 @@ async function handleWebhookEvent(event: Stripe.Event) {
   }
 }
 
-// Correct GET handler for App Router
+/**
+ * GET method handler - blocks unauthorized access
+ * Stripe webhooks should only use POST
+ */
 export async function GET(request: NextRequest) {
   return NextResponse.json(
     { error: 'Method not allowed' },
