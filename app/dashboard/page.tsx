@@ -215,6 +215,17 @@ export default function DashboardPage() {
     }
   }
 
+  // Add this near your other button handlers
+  const testSubscription = async () => {
+    try {
+      const response = await fetch('/api/test-subscription')
+      const data = await response.json()
+      console.log('Subscription test results:', data)
+    } catch (error) {
+      console.error('Test failed:', error)
+    }
+  }
+
   // Add skeleton loading state
   if (loading) {
     return (
