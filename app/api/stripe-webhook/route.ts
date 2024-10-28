@@ -60,12 +60,8 @@ export async function POST(req: NextRequest) {
  * @param event - Verified Stripe webhook event
  */
 async function handleWebhookEvent(event: Stripe.Event) {
-  // Initialize Supabase client within request context
-  const supabase = createServerComponentClient<Database>({ cookies })
-  
   switch (event.type) {
     case 'payment_intent.succeeded': {
-      // Log successful payments for monitoring
       const paymentIntent = event.data.object as Stripe.PaymentIntent
       console.log('💰 Payment successful:', paymentIntent.id)
       break
