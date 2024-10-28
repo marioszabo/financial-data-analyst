@@ -3,18 +3,17 @@ import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/types/supabase'
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = createServerComponentClient<Database>({ cookies })
     
-    // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
     
     if (userError || !user) {
       return NextResponse.json({ error: 'User not found' }, { status: 401 })
     }
 
-    // Get subscription data
+    // Get subscription data with full details
     const { data: subscription, error: subError } = await supabase
       .from('subscriptions')
       .select('*')
@@ -22,19 +21,23 @@ export async function GET(request: Request) {
       .single()
 
     if (subError) {
-      console.error('Subscription query error:', subError)
-      return NextResponse.json({ error: 'Failed to fetch subscription' }, { status: 500 })
+      return NextResponse.json({ 
+        error: 'Subscription query error',
+        details: subError
+      }, { status: 500 })
     }
 
-    // Return detailed subscription info for debugging
+    // Return detailed debug information
     return NextResponse.json({
       subscription,
-      isActive: subscription?.status === 'active' && 
-                new Date(subscription.current_period_end) > new Date(),
-      currentTime: new Date().toISOString(),
-      user: {
-        id: user.id,
-        email: user.email
+      debug: {
+        userId: user.id,
+        hasSubscription: !!subscription,
+        status: subscription?.status,
+        periodEnd: subscription?.current_period_end,
+        currentTime: new Date().toISOString(),
+        isActive: subscription?.status === 'active' && 
+                 new Date(subscription.current_period_end) > new Date()
       }
     })
 

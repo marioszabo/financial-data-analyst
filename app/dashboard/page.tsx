@@ -10,6 +10,7 @@ import { isSubscriptionActive } from '@/lib/utils'
 import Script from 'next/script'
 import { loadStripe } from '@stripe/stripe-js'
 import { ChartBar, MessageSquare, Brain, ArrowRight, Settings, CreditCard, LogOut } from 'lucide-react'
+import { TestSubscriptionButton } from '@/components/TestSubscriptionButton'
 
 // Initialize Stripe outside component to prevent multiple instances
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
@@ -445,6 +446,7 @@ export default function DashboardPage() {
           </Card>
         </div>
       </main>
+      <TestSubscriptionButton />
     </div>
   )
 }
