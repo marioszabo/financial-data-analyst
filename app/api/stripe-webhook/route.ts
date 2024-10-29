@@ -4,7 +4,12 @@ import { stripe } from '@/lib/stripe'
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/supabase'
 
-export const config = { api: { bodyParser: false }}
+// Disable body parsing for raw body access
+export const config = {
+  api: {
+    bodyParser: false
+  }
+}
 
 // Initialize Supabase client for Node.js environment
 const supabase = createClient<Database>(
