@@ -21,8 +21,21 @@ const supabase = createClient<Database>(
  */
 export async function POST(req: NextRequest) {
   try {
-    // Get the raw body as a buffer
-    const payload = await req.text()
+    // Get raw body as buffer
+    const chunks = []
+    const reader = req.body?.getReader()
+    if (!reader) {
+      throw new Error('No request body')
+    }
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+    }
+    
+    const buffer = Buffer.concat(chunks)
+    const rawBody = buffer.toString('utf8')
     const sig = req.headers.get('stripe-signature')
 
     if (!sig) {
@@ -37,24 +50,18 @@ export async function POST(req: NextRequest) {
       secretLength: process.env.STRIPE_WEBHOOK_SECRET?.length,
       sigPrefix: sig.slice(0, 6),
       sigLength: sig.length,
-      payloadLength: payload.length,
-      payloadPreview: payload.slice(0, 50),
-      // Add raw buffer check
-      isBuffer: Buffer.isBuffer(payload),
-      // Add content type check
+      rawBodyLength: buffer.length,
       contentType: req.headers.get('content-type')
     })
 
     const event = stripe.webhooks.constructEvent(
-      payload,
+      rawBody,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
     await handleWebhookEvent(event)
-
     return NextResponse.json({ received: true })
-
   } catch (err) {
     console.error('Webhook error:', err instanceof Error ? err.message : 'Unknown error')
     return NextResponse.json(
