@@ -4,12 +4,9 @@ import { stripe } from '@/lib/stripe'
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/supabase'
 
-// Disable body parsing for raw body access
-export const config = {
-  api: {
-    bodyParser: false
-  }
-}
+// New way to configure route segments in App Router
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 // Initialize Supabase client for Node.js environment
 const supabase = createClient<Database>(
