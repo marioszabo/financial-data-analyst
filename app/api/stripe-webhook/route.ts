@@ -4,6 +4,8 @@ import { stripe } from '@/lib/stripe'
 import { createClient } from '@supabase/supabase-js'
 import { Database } from '@/types/supabase'
 
+export const config = { api: { bodyParser: false }}
+
 // Initialize Supabase client for Node.js environment
 const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
