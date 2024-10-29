@@ -14,6 +14,13 @@ const supabase = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Add config object to handle raw body
+export const config = {
+  api: {
+    bodyParser: false
+  }
+}
+
 /**
  * Webhook endpoint handler for Stripe events
  * Verifies webhook signatures and processes various subscription events
@@ -21,8 +28,20 @@ const supabase = createClient<Database>(
  */
 export async function POST(req: NextRequest) {
   try {
-    // Get raw body directly as text
-    const rawBody = await req.text()
+    // Get raw request body
+    const chunks = []
+    const reader = req.body?.getReader()
+    if (!reader) {
+      throw new Error('No request body')
+    }
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+    }
+    
+    const rawBody = Buffer.concat(chunks).toString('utf8')
     const sig = req.headers.get('stripe-signature')
 
     if (!sig) {
@@ -38,8 +57,7 @@ export async function POST(req: NextRequest) {
       sigPrefix: sig.slice(0, 6),
       sigLength: sig.length,
       bodyLength: rawBody.length,
-      bodyPreview: rawBody.slice(0, 50),
-      allHeaders: Object.fromEntries(req.headers.entries())
+      bodyPreview: rawBody.slice(0, 50)
     })
 
     const event = stripe.webhooks.constructEvent(
