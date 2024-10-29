@@ -31,6 +31,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Add these debug logs
+    console.log('Webhook Debug:', {
+      secretPrefix: process.env.STRIPE_WEBHOOK_SECRET?.slice(0, 6),
+      secretLength: process.env.STRIPE_WEBHOOK_SECRET?.length,
+      sigPrefix: sig.slice(0, 6),
+      sigLength: sig.length
+    })
+
     // Use standard constructEvent for Node.js runtime
     const event = stripe.webhooks.constructEvent(
       payload,
