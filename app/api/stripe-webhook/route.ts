@@ -8,18 +8,15 @@ import { Database } from '@/types/supabase'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Add new route segment config
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
+
 // Initialize Supabase client for Node.js environment
 const supabase = createClient<Database>(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-// Add config object to handle raw body
-export const config = {
-  api: {
-    bodyParser: false
-  }
-}
 
 /**
  * Webhook endpoint handler for Stripe events
