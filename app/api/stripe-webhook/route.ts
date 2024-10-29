@@ -21,6 +21,7 @@ const supabase = createClient<Database>(
  */
 export async function POST(req: NextRequest) {
   try {
+    // Get the raw body as a buffer
     const payload = await req.text()
     const sig = req.headers.get('stripe-signature')
 
@@ -37,7 +38,11 @@ export async function POST(req: NextRequest) {
       sigPrefix: sig.slice(0, 6),
       sigLength: sig.length,
       payloadLength: payload.length,
-      payloadPreview: payload.slice(0, 50)
+      payloadPreview: payload.slice(0, 50),
+      // Add raw buffer check
+      isBuffer: Buffer.isBuffer(payload),
+      // Add content type check
+      contentType: req.headers.get('content-type')
     })
 
     const event = stripe.webhooks.constructEvent(
