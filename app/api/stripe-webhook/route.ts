@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       sigLength: sig.length,
       bodyLength: rawBody.length,
       bodyPreview: rawBody.slice(0, 50),
-      secret: process.env.STRIPE_WEBHOOK_SECRET // Temporary for debugging
+      allHeaders: Object.fromEntries(req.headers.entries())
     })
 
     const event = stripe.webhooks.constructEvent(
