@@ -31,22 +31,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Add these debug logs
     console.log('Webhook Debug:', {
       secretPrefix: process.env.STRIPE_WEBHOOK_SECRET?.slice(0, 6),
       secretLength: process.env.STRIPE_WEBHOOK_SECRET?.length,
       sigPrefix: sig.slice(0, 6),
-      sigLength: sig.length
+      sigLength: sig.length,
+      payloadLength: payload.length,
+      payloadPreview: payload.slice(0, 50)
     })
 
-    // Use standard constructEvent for Node.js runtime
     const event = stripe.webhooks.constructEvent(
       payload,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
     )
 
-    // Process event synchronously in Node.js environment
     await handleWebhookEvent(event)
 
     return NextResponse.json({ received: true })
