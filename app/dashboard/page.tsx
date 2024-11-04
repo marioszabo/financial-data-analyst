@@ -28,10 +28,14 @@ interface UserDetails {
 
 interface SubscriptionDetails {
   status: 'active' | 'inactive'
-  start_date?: string
-  end_date?: string
+  current_period_start?: string
   current_period_end?: string
-  cancel_at_period_end?: boolean  // Add this property
+  cancel_at_period_end: boolean
+  canceled_at?: string | null
+  cancel_at?: string | null
+  stripe_subscription_id?: string
+  stripe_customer_id?: string
+  price_id?: string
 }
 
 /**
@@ -99,21 +103,26 @@ export default function DashboardPage() {
           avatar_url: authUser.user_metadata?.avatar_url
         })
 
-        // Fetch subscription status from database
+        // Updated subscription fetch
         const { data: subscription } = await supabase
           .from('subscriptions')
-          .select('status, created_at, current_period_end, cancel_at_period_end')
+          .select('*')  // Select all fields
           .eq('user_id', authUser.id)
           .single()
 
-        // Update subscription details if found
         if (subscription) {
           setSubscriptionDetails({
-            status: subscription.cancel_at_period_end ? 'canceled' : subscription.status,
-            start_date: subscription.created_at,
+            status: subscription.status,
+            current_period_start: subscription.current_period_start,
             current_period_end: subscription.current_period_end,
-            cancel_at_period_end: subscription.cancel_at_period_end  // Now TypeScript knows about this property
+            cancel_at_period_end: subscription.cancel_at_period_end,
+            canceled_at: subscription.canceled_at,
+            cancel_at: subscription.cancel_at,
+            stripe_subscription_id: subscription.stripe_subscription_id,
+            stripe_customer_id: subscription.stripe_customer_id,
+            price_id: subscription.price_id
           })
+          setSubscriptionStatus(subscription.status)
         }
 
         // Verify subscription status with external service
@@ -309,7 +318,7 @@ export default function DashboardPage() {
               </CardTitle>
               <CardDescription className="text-black">
                 {subscriptionDetails.cancel_at_period_end 
-                  ? 'Your subscription has been canceled'
+                  ? 'Your subscription will end at the current period'
                   : subscriptionDetails.status === 'active' 
                     ? 'Your subscription is active'
                     : 'Upgrade to access all features'}
@@ -317,48 +326,44 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <div className={`h-2.5 w-2.5 rounded-full ${
-                    subscriptionDetails.cancel_at_period_end ? 'bg-yellow-500' :
-                    subscriptionDetails.status === 'active' ? 'bg-green-500' : 
-                    'bg-red-500'
-                  }`} />
-                  <span className="font-medium text-black">
-                    {subscriptionDetails.cancel_at_period_end ? 'Canceled' :
-                     subscriptionDetails.status === 'active' ? 'Active' : 
-                     'Inactive'}
-                  </span>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <p className="font-medium">
+                      <span className={`inline-block px-2 py-1 rounded-full text-sm ${
+                        subscriptionDetails.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {subscriptionDetails.status || 'No subscription'}
+                      </span>
+                    </p>
+                  </div>
+                  {subscriptionDetails.status === 'active' && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Current Period</p>
+                      <p className="font-medium">
+                        {new Date(subscriptionDetails.current_period_start!).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })} - {new Date(subscriptionDetails.current_period_end!).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {(subscriptionDetails.status === 'active' || subscriptionDetails.cancel_at_period_end) && (
-                  <div className="space-y-2 pt-2 border-t border-gray-100">
-                    <div className="space-y-1">
-                      <div className="text-sm text-black">Subscribed on</div>
-                      <div className="font-medium text-black">
-                        {new Date(subscriptionDetails.start_date!).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-sm text-black">
-                        {subscriptionDetails.cancel_at_period_end ? 'Access until' : 'Next billing date'}
-                      </div>
-                      <div className="font-medium text-black">
-                        {new Date(subscriptionDetails.current_period_end!).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}
-                      </div>
-                    </div>
-                    <div className="text-xs text-black mt-2">
-                      {subscriptionDetails.cancel_at_period_end 
-                        ? 'Your subscription has been canceled and will not renew. You have access until the end date above.'
-                        : 'Your subscription will automatically renew on the next billing date'}
-                    </div>
+                {subscriptionDetails.cancel_at_period_end && (
+                  <div className="mt-4 p-4 bg-amber-50 rounded-lg">
+                    <p className="text-amber-800">
+                      Your subscription will end on {new Date(subscriptionDetails.current_period_end!).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </p>
                   </div>
                 )}
               </div>
