@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import Image from "next/image";
 import { Moon, Sun, ArrowLeft } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
@@ -12,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-// Add this interface to define the props structure
 interface TopNavBarProps {
   features?: {
     showDomainSelector?: boolean;
@@ -21,7 +19,6 @@ interface TopNavBarProps {
   };
 }
 
-// Change this line to include the props type
 const TopNavBar: React.FC<TopNavBarProps> = ({ features = {} }) => {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -46,13 +43,8 @@ const TopNavBar: React.FC<TopNavBarProps> = ({ features = {} }) => {
           <ArrowLeft className="h-4 w-4" />
           Go back to dashboard
         </Button>
-        <div className="font-bold text-xl flex gap-2 items-center">
-          <Image
-            src={theme === "dark" ? "/wordmark-dark.svg" : "/wordmark.svg"}
-            alt="Company Wordmark"
-            width={112}
-            height={20}
-          />
+        <div className="font-bold text-xl">
+          Finance AI
         </div>
       </div>
       <div className="flex items-center gap-2">

@@ -584,9 +584,6 @@ export default function FinancePage() {
                       <CardTitle className="text-lg">
                         Financial Assistant
                       </CardTitle>
-                      <CardDescription className="text-xs">
-                        Powered by Claude
-                      </CardDescription>
                     </div>
                   </>
                 )}
