@@ -170,4 +170,19 @@ The system is designed to be:
 - User-friendly
 - Maintainable
 
+## 📊 Financial Analysis API
+
+### API Overview
+The `/api/finance` endpoint provides two main functionalities:
+1. Financial data analysis with AI-powered visualizations
+2. Stripe subscription management
+
+### Features
+- Edge runtime for optimal performance
+- Support for text and image inputs
+- Real-time chart generation
+- Subscription handling
+
+### Endpoint: `/api/finance`
+
 All components work together to provide a seamless experience for financial data analysis while maintaining secure access control through the subscription system.)
