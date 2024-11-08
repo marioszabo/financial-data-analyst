@@ -1,5 +1,7 @@
 [# Financial Data Analyst App - Under Development, for test purposes only
 
+[Link to the development version of the app](https://financial-data-analyst-ruddy.vercel.app/)
+
 A Next.js application with Supabase authentication and Stripe subscription management.
 
 ## 🔐 Authentication Flow
